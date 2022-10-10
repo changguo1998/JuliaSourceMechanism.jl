@@ -1,6 +1,6 @@
 module XCorr
-using Dates, DSP, Statistics, LinearAlgebra
-import JuliaSourceMechanism: trim, Setting
+using Dates, DSP, Statistics, LinearAlgebra, SeisTools.DataProcess
+import JuliaSourceMechanism: Setting
 
 tags = ("XCorr", "xcorr")
 properties = ["xcorr_dt", "xcorr_order", "xcorr_band", "xcorr_maxlag", "xcorr_trim"]
@@ -25,7 +25,7 @@ function _xcorr(u::VecOrMat, v::VecOrMat; maxlag::Union{Int,Nothing} = nothing)
         maxlag = Lu + Lv - 1
     end
     r = zeros(2 * maxlag + 1, Wu * Wv)
-    for i = 1:size(r, 1), j = 1:size(r, 2)
+    for i = axes(r, 1), j = axes(r, 2)
         s = i - maxlag - 1
         (ju, jv) = divrem(j - 1, Wv)
         ju += 1
@@ -41,28 +41,30 @@ function _xcorr(u::VecOrMat, v::VecOrMat; maxlag::Union{Int,Nothing} = nothing)
 end
 
 function preprocess!(phase::Setting, station::Setting, env::Setting)
-    @debug "prepare $(tags[1]) data for station: $(station["network"]).$(station["station"]).$(station["component"]) phase: $(phase["type"])"
+    @debug "prepare $(tags[1]) data for station: $(station["network"]).$(station["station"]).$(station["component"]) \
+    phase: $(phase["type"])"
     w = deepcopy(station["base_record"])
     w_resample = resample(w, station["meta_dt"] / phase["xcorr_dt"])
     fltr = digitalfilter(Bandpass(phase["xcorr_band"][1], phase["xcorr_band"][2]; fs = 1 / phase["xcorr_dt"]),
                          Butterworth(phase["xcorr_order"]))
     w_filt = filtfilt(fltr, w_resample)
-    w_trim = trim(w_filt, station["base_begintime"],
+    (_, w_trim, _) = cut(w_filt, station["base_begintime"],
                   phase["at"] + Millisecond(round(Int, phase["xcorr_trim"][1] * 1e3)),
-                  phase["at"] + Millisecond(round(Int, phase["xcorr_trim"][2] * 1e3)), phase["xcorr_dt"])
+                  phase["at"] + Millisecond(round(Int, phase["xcorr_trim"][2] * 1e3)),
+                  Millisecond(round(Int, 1e3 * phase["xcorr_dt"])))
     nm = norm(w_trim)
     w_trim ./= nm
     g = deepcopy(station["green_fun"])
     g_resample = resample(g, station["green_dt"] / phase["xcorr_dt"]; dims = 1)
     g_filt = filtfilt(fltr, g_resample)
-    g_trim = trim(g_filt, env["event"]["origintime"],
-                  env["event"]["origintime"] + Millisecond(round(Int, (phase["tt"] + phase["xcorr_trim"][1]) * 1e3)),
-                  env["event"]["origintime"] + Millisecond(round(Int, (phase["tt"] + phase["xcorr_trim"][2]) * 1e3)),
-                  phase["xcorr_dt"]; fillval = 0.0)
+    (_, g_trim, _) = cut(g_filt, station["base_begintime"],
+    station["base_begintime"] + Millisecond(round(Int, (phase["tt"] + phase["xcorr_trim"][1]) * 1e3)),
+    station["base_begintime"] + Millisecond(round(Int, (phase["tt"] + phase["xcorr_trim"][2]) * 1e3)),
+                  Millisecond(round(Int, 1e3*phase["xcorr_dt"])); fillval = 0.0)
     txcorr = permutedims(_xcorr(w_trim, g_trim; maxlag = round(Int, phase["xcorr_maxlag"] / phase["xcorr_dt"])))
     phase["xcorr_relation"] = txcorr
     amp = zeros(6, 6)
-    for i = 1:6, j = 1:6, k = 1:size(g_trim, 1)
+    for i = 1:6, j = 1:6, k = axes(g_trim, 1)
         amp[i, j] += g_trim[k, i] * g_trim[k, j]
     end
     phase["xcorr_synamp"] = amp
@@ -80,7 +82,7 @@ function misfit(p::Setting, m::Vector)
     maxv = 0.0
     tv = 0.0
     tr = deepcopy(p["xcorr_relation"])
-    for j = 1:size(tr, 2)
+    for j = axes(tr, 2)
         tv = 0.0
         for i = 1:6
             tv += tr[i, j] * m[i]
@@ -102,7 +104,7 @@ function detail(p::Setting, m::Vector)
     tv = 0.0
     iv = 0
     tr = deepcopy(p["xcorr_relation"])
-    for j = 1:size(tr, 2)
+    for j = axes(tr, 2)
         tv = 0.0
         for i = 1:6
             tv += tr[i, j] * m[i]

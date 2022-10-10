@@ -1,4 +1,4 @@
-
+#=
 """
 distance(lat1, lon1, lat2, lon2) -> (dist, az, gcarc)
 
@@ -60,6 +60,15 @@ function detrendandtaper!(x::VecOrMat; ratio::Real = 0.05)
     taper!(x; ratio = ratio)
     return nothing
 end
+=#
+
+function detrendandtaper!(x::AbstractVecOrMat)
+    for v in eachcol(x)
+        SeisTools.DataProcess.detrend!(v)
+        SeisTools.DataProcess.taper!(v)
+    end
+    return nothing
+end
 
 """
 dc2ts(sdr::Vector) where T <: Real -> m::Vector{AbstractFloat}
@@ -80,6 +89,7 @@ function dc2ts(sdr::Vector{T}) where {T<:Real}
     return m
 end
 
+#=
 function sacDateTime(h)
     return DateTime(h["nzyear"], 1, 1, h["nzhour"], h["nzmin"], h["nzsec"], h["nzmsec"]) + Day(h["nzjday"] - 1)
 end
@@ -112,7 +122,6 @@ function trim(w::VecOrMat, wbt::DateTime, bt::DateTime, et::DateTime, dt::Real; 
                 fillval = fillval)
 end
 
-#=
 function trim(sac::Seis.SACFrame, bt::DateTime, et::DateTime; fillval::Union{Nothing,Real} = nothing)
     nh = deepcopy(sac.head)
     npts = round(Int, round(et - bt, Millisecond) / Millisecond(round(Int, sac.head["delta"] * 1000)))
@@ -145,44 +154,42 @@ function trim(sac::Seis.SACFrame, bt::DateTime, et::DateTime; fillval::Union{Not
     nh["b"] = 0.0
     return Seis.SACFrame(nh, [w])
 end
-=#
 
 function trim(s::Setting, bt::DateTime, et::DateTime; fillval::Union{Nothing,Real} = nothing)
     return trim(s["base_record"], s["base_begintime"], bt, et, s["meta_dt"]; fillval = fillval)
 end
 
-"""
-preprocess!(env::Setting, modules::Vector{Module}; warn::Bool = true)
-"""
-function preprocess!(env::Setting, modules::Vector{Module}; warn::Bool = true)
+=#
+function loaddata!(env::Setting)
     for s in env["stations"]
-        # t = Seis.readsac(normpath(env["dataroot"], "sac", s["meta_file"]))
+        (dist, az, _) = SeisTools.Geodesy.distance(env["event"]["latitude"], env["event"]["longitude"], s["meta_lat"],
+                                                   s["meta_lon"])
+        s["base_distance"] = dist
+        s["base_azimuth"] = az
+    end
+    for s in env["stations"]
         t = SeisTools.SAC.read(normpath(env["dataroot"], "sac", s["meta_file"]))
-        # if s["base_trim"][1] < s["meta_btime"]
-        #     trim_bt = s["meta_btime"]
-        #     if warn
-        #         printstyled("Begin time: ", s["base_trim"][1],
-        #                     " of $(s["network"]).$(s["station"]).$(s["component"]) is too early, set to: ", trim_bt,
-        #                     "\n"; color = :yellow)
-        #     end
-        # else
-        #     trim_bt = s["base_trim"][1]
-        # end
-        # if s["base_trim"][2] > s["meta_btime"] + Millisecond(round(Int, t.head["npts"] * t.head["delta"] * 1e3))
-        #     trim_et = s["meta_btime"] + Millisecond(round(Int, t.head["npts"] * t.head["delta"] * 1e3))
-        #     if warn
-        #         printstyled("End time: ", s["base_trim"][2],
-        #                     " of $(s["network"]).$(s["station"]).$(s["component"]) is too late, set to: ", trim_et,
-        #                     "\n"; color = :yellow)
-        #     end
-        # else
-        #     trim_et = s["base_trim"][2]
-        # end
         trim_bt = s["base_trim"][1]
         trim_et = s["base_trim"][2]
-        # t = trim(t, trim_bt, trim_et)
-        # s["base_begintime"] = sacDateTime(t.head)
-        # s["base_record"] = deepcopy(t.data[1])
+        (sbt, tw, _) = SeisTools.DataProcess.cut(t.data, SeisTools.SAC.DateTime(t.hdr), trim_bt, trim_et,
+                                                 Millisecond(round(Int, t.hdr["delta"] * 1000)))
+        s["base_begintime"] = sbt
+        s["base_record"] = tw
+        Green.load!(s, env)
+        detrendandtaper!(s["base_record"])
+        detrendandtaper!(s["green_fun"])
+    end
+    return nothing
+end
+
+"""
+preprocess!(env::Setting, modules::Vector{Module})
+"""
+function preprocess!(env::Setting, modules::Vector{Module})
+    for s in env["stations"]
+        t = SeisTools.SAC.read(normpath(env["dataroot"], "sac", s["meta_file"]))
+        trim_bt = s["base_trim"][1]
+        trim_et = s["base_trim"][2]
         (sbt, tw, _) = SeisTools.DataProcess.cut(t.data, SeisTools.SAC.DateTime(t.hdr), trim_bt, trim_et, 
             Millisecond(round(Int, t.hdr["delta"]*1000)))
         s["base_begintime"] = sbt

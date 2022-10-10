@@ -1,7 +1,7 @@
 module PSR
 
-using Dates, Statistics
-import JuliaSourceMechanism: Setting, trim
+using Dates, Statistics, SeisTools.DataProcess
+import JuliaSourceMechanism: Setting
 
 tags = ("psr", "PSR")
 properties = ["psr_trimp", "psr_trims"]
@@ -32,25 +32,28 @@ function preprocess!(phase::Setting, station::Setting, env::Setting)
         end
         idx = findfirst(typelist .== "S")
         w = deepcopy(station["base_record"])
-        wp = trim(w, station["base_begintime"], phase["at"] + Millisecond(round(Int, phase["psr_trimp"][1])),
-                  phase["at"] + Millisecond(round(Int, phase["psr_trimp"][2])), station["meta_dt"])
-        ws = trim(w, station["base_begintime"],
+        (_, wp, _) = cut(w, station["base_begintime"], phase["at"] + Millisecond(round(Int, phase["psr_trimp"][1])),
+                  phase["at"] + Millisecond(round(Int, phase["psr_trimp"][2])), Millisecond(round(Int, 1e3*station["meta_dt"])))
+        (_, ws, _) = cut(w, station["base_begintime"],
                   station["phases"][idx]["at"] + Millisecond(round(Int, phase["psr_trims"][1])),
-                  station["phases"][idx]["at"] + Millisecond(round(Int, phase["psr_trims"][2])), station["meta_dt"])
+                  station["phases"][idx]["at"] + Millisecond(round(Int, phase["psr_trims"][2])), 
+                  Millisecond(round(Int, 1e3*station["meta_dt"])))
         phase["psr_obs"] = 10.0 * log10(mean(abs2, ws) / mean(abs2, wp))
         g = deepcopy(station["green_fun"])
-        o = env["event"]["origintime"]
-        g_trimp = trim(g, o, o + Millisecond(round(Int, (phase["tt"] + phase["psr_trimp"][1]) * 1e3)),
-                       o + Millisecond(round(Int, (phase["tt"] + phase["psr_trimp"][2]) * 1e3)), station["green_dt"])
-        g_trims = trim(g, o, o + Millisecond(round(Int, (phase["tt"] + phase["psr_trims"][1]) * 1e3)),
-                       o + Millisecond(round(Int, (phase["tt"] + phase["psr_trims"][2]) * 1e3)), station["green_dt"])
+        o = station["base_begintime"]
+        (_, g_trimp, _) = cut(g, o, o + Millisecond(round(Int, (phase["tt"] + phase["psr_trimp"][1]) * 1e3)),
+                       o + Millisecond(round(Int, (phase["tt"] + phase["psr_trimp"][2]) * 1e3)), 
+                       Millisecond(round(Int, 1e3*station["green_dt"])))
+        (_, g_trims, _) = cut(g, o, o + Millisecond(round(Int, (phase["tt"] + phase["psr_trims"][1]) * 1e3)),
+                       o + Millisecond(round(Int, (phase["tt"] + phase["psr_trims"][2]) * 1e3)),
+                       Millisecond(round(Int, 1e3*station["green_dt"])))
         amp_p = zeros(6, 6)
         amp_s = zeros(6, 6)
         for i = 1:6, j = 1:6
-            for k = 1:size(g_trimp, 1)
+            for k = axes(g_trimp, 1)
                 amp_p[i, j] += g_trimp[k, i] * g_trimp[k, j]
             end
-            for k = 1:size(g_trims, 1)
+            for k = axes(g_trims, 1)
                 amp_s[i, j] += g_trims[k, i] * g_trims[k, j]
             end
         end

@@ -164,7 +164,7 @@ end
 function buildstationconfiguration(root::AbstractString, event::Setting)
     sacmeta = parsesac(normpath(root, "sac"))
     for s in sacmeta
-        (dist, az, _) = distance(event["latitude"], event["longitude"], s["meta_lat"], s["meta_lon"])
+        (dist, az, _) = SeisTools.Geodesy.distance(event["latitude"], event["longitude"], s["meta_lat"], s["meta_lon"])
         s["base_distance"] = dist
         s["base_azimuth"] = az
         s["base_trim"] = [s["meta_btime"], s["meta_btime"] + Minute(10)]

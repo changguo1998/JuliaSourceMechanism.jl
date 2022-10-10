@@ -551,7 +551,7 @@ function load!(station::Dict, env::Dict)
         # g = _conv_freqdomain(tg, S)
         g = tg
     end
-    shift = round(Int, Millisecond(env["event"]["origintime"] - station["trim_bt"]) / 
+    shift = round(Int, Millisecond(env["event"]["origintime"] - station["base_begintime"]) / 
         Millisecond(round(Int, gmeta["dt"]*1000)))
     Nresample = round(Int, npts * gmeta["dt"] / station["green_dt"])
     Nresample += mod(Nresample, 2)
@@ -560,6 +560,7 @@ function load!(station::Dict, env::Dict)
         _resample!(@view(wr[shift+1:shift+Nresample, i]), g[:, i])
     end
     station["green_fun"] = wr
+    station["green_dt"] = gmeta["dt"]
     return nothing
 end
 

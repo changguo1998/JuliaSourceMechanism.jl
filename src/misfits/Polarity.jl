@@ -1,7 +1,7 @@
 module Polarity
 
-using Dates
-import JuliaSourceMechanism: Setting, trim
+using Dates, SeisTools.DataProcess
+import JuliaSourceMechanism: Setting
 
 tags = ("polarity", "pol", "Pol", "Polarity")
 properties = ["polarity_trim", "polarity_obs"]
@@ -25,12 +25,13 @@ function preprocess!(phase::Setting, station::Setting, env::Setting)
         return nothing
     end
     g = deepcopy(station["green_fun"])
-    o = env["event"]["origintime"]
-    g_trim = trim(g, o, o + Millisecond(round(Int, (phase["tt"] + phase["polarity_trim"][1]) * 1e3)),
-                  o + Millisecond(round(Int, (phase["tt"] + phase["polarity_trim"][2]) * 1e3)), station["green_dt"])
+    o = station["base_begintime"]
+    (_, g_trim, _) = cut(g, o, o + Millisecond(round(Int, (phase["tt"] + phase["polarity_trim"][1]) * 1e3)),
+                  o + Millisecond(round(Int, (phase["tt"] + phase["polarity_trim"][2]) * 1e3)), 
+                  Millisecond(round(Int, station["green_dt"]*1e3)))
     tvec = zeros(6)
     for j = 1:6
-        for i = 1:size(g_trim, 1)
+        for i = axes(g_trim, 1)
             tvec[j] += g_trim[i, j]
         end
     end
