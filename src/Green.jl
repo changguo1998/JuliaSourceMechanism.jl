@@ -201,7 +201,7 @@ function _calgreenfun_dwn_station(s, model::Matrix, depth::Real, event, strs)
         m0[1, 1] = 0.0
         tps = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 2])
         tss = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 3])
-        (minimum(v -> v.t, tps), minimum(v -> v.t, tss))
+        (minimum(tps), minimum(tss))
     end
     for c = 1:3
         targetpath = joinpath(targetdir, @sprintf("%s.%s.%s.gf", s["network"], s["station"], cmps[c]))
@@ -459,7 +459,7 @@ function printgreenfile(path::AbstractString, meta::Dict{String,Any}, gf::Abstra
     open(path, "w") do io
         for k in sort(collect(keys(meta)))
             if typeof(meta[k]) <: AbstractMatrix
-                s = "# " * string(k) * "\n" * join("# layer " .* mat2line(meta[k], " "), "\n")
+                s = "# " * string(k) * " Matrix\n" * join("# layer " .* mat2line(meta[k], " "), "\n")
             else
                 s = "# " * string(k) * " " * string(typeof(meta[k])) * " " * string(meta[k])
             end
