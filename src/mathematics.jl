@@ -160,6 +160,29 @@ function trim(s::Setting, bt::DateTime, et::DateTime; fillval::Union{Nothing,Rea
 end
 
 =#
+
+function calcgreen!(env::Setting)
+    taglist = String[]
+    idxlist = Int[]
+    for i in eachindex(env["stations"])
+        s = env["stations"][i]
+        tag = String(s["network"]*"."*s["station"])
+        if !(tag in taglist)
+            push!(taglist, tag)
+            push!(idxlist, i)
+        end
+    end
+    Threads.@threads for i in idxlist
+        s = env["stations"][i]
+        (dist, az, _) = SeisTools.Geodesy.distance(env["event"]["latitude"], env["event"]["longitude"], s["meta_lat"],
+                                                   s["meta_lon"])
+        s["base_distance"] = dist
+        s["base_azimuth"] = az
+        Green.calc(s, env)
+    end
+    return nothing
+end
+
 function loaddata!(env::Setting)
     for s in env["stations"]
         (dist, az, _) = SeisTools.Geodesy.distance(env["event"]["latitude"], env["event"]["longitude"], s["meta_lat"],

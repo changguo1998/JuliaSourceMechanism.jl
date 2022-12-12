@@ -199,9 +199,9 @@ function _calgreenfun_dwn_station(s, model::Matrix, depth::Real, event, strs)
         m0 = deepcopy(m)
         m0[2:end, 1] .= cumsum(m0[:, 1])[1:end-1]
         m0[1, 1] = 0.0
-        tps = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 2])
-        tss = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 3])
-        (minimum(tps), minimum(tss))
+        tp = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 2])
+        ts = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 3])
+        (tp.phase.t, ts.phase.t)
     end
     for c = 1:3
         targetpath = joinpath(targetdir, @sprintf("%s.%s.%s.gf", s["network"], s["station"], cmps[c]))
@@ -561,6 +561,16 @@ function load!(station::Dict, env::Dict)
     end
     station["green_fun"] = wr
     station["green_dt"] = gmeta["dt"]
+    return nothing
+end
+
+function calc(station::Dict, env::Dict)
+    (gfpath, gfname) = greenfilename(station, env)
+    gfilename = joinpath(gfpath, gfname)
+    if !isfile(gfilename)
+        @info "Green function of $(station["network"]).$(station["station"]).$(station["component"]) not exist. Calculat now"
+        calculategreenfun(station, env)
+    end
     return nothing
 end
 
