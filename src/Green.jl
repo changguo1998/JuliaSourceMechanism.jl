@@ -13,7 +13,7 @@ function _resample!(y::AbstractVector, x::AbstractVector)
     X = fft(x)
     n = length(y)
     Y = zeros(ComplexF64, n)
-    m = floor(Int, n / 2)
+    m = floor(Int, min(n, length(x)) / 2)
     for i = 1:m
         Y[i] = X[i]
         Y[n-i+1] = X[end-i+1]
@@ -188,7 +188,12 @@ function _calgreenfun_dwn_station(s, model::Matrix, depth::Real, event, strs)
     m = round.(m, digits=6)
     npts = round(Int, s["green_tl"] / s["green_dt"])
     npts += mod(npts, 2)
-    xl = ceil((s["green_dt"] * npts * maximum(m[:, 2]) + s["base_distance"]) / 10.0) * 10.0
+    if "green_xl" in keys(s)
+        xl = s["green_xl"]
+    else
+        xl = ceil((s["green_dt"] * npts * maximum(m[:, 2]) + s["base_distance"]) / 10.0) * 10.0
+        s["green_xl"] = xl
+    end
     spec = DWN.dwn(m, zh, 1.0, [(rd, az)], zr, npts, s["green_dt"], xl, s["green_dt"], s["green_m"])
     w = DWN.freqspec2timeseries(spec, npts)
     green = [w[1, 2, :]... w[1, 1, :]... -w[1, 3, :]...]
@@ -387,7 +392,7 @@ function ttlib_readlocation(path::AbstractString, x::Real, y::Real, z::Real)
 end
 
 function load3dgreenlib(s, depth::Real, event, targetdir::AbstractString)
-    (r, baz, _) = SeisTool.Geodesy.distance(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])
+    (r, baz, _) = SeisTools.Geodesy.distance(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])
     x = r * cosd(baz)
     y = r * sind(baz)
     (rt, t, w) = _glib_readlocation(abspath(s["green_modelpath"]), x, y, depth)
@@ -536,8 +541,13 @@ function load!(station::Dict, env::Dict)
     npts = size(tg, 1)
     nfreq = round(Int, npts / 2)
     if gmeta["type"] == "DWN"
-        (stf, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"] * npts, station["green_tsource"], 0.0, 1.0)
-        g = _conv_timedomain(tg, stf)
+        (stf, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"] * npts, station["green_tsource"], 
+            -2*station["green_tsource"], 1.0)
+        # g = _conv_timedomain(tg, stf)
+        # g = SeisTools.DataProcess.conv_t(tg, stf)
+        # g = SeisTools.DataProcess.conv_f(tg, stf)
+        g = zeros(size(tg))
+        SeisTools.DataProcess.conv_f!(g, tg, stf)
     elseif uppercase(station["green_modeltype"]) == "3D"
         # (_, S1) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, gmeta["risetime"] / 2.0, 0.0, 1.0)
         # (_, S2) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], 0.0, 1.0)
@@ -551,13 +561,23 @@ function load!(station::Dict, env::Dict)
         # g = _conv_freqdomain(tg, S)
         g = tg
     end
-    shift = round(Int, Millisecond(env["event"]["origintime"] - station["base_begintime"]) / 
+    shift = round(Int, Millisecond(env["event"]["origintime"] - station["base_trim"][1]) / 
         Millisecond(round(Int, gmeta["dt"]*1000)))
-    Nresample = round(Int, npts * gmeta["dt"] / station["green_dt"])
-    Nresample += mod(Nresample, 2)
-    wr = zeros(Nresample+shift, 6)
+    NPTS = round(Int, Millisecond(station["base_trim"][2] - station["base_trim"][1]) / 
+        Millisecond(round(Int, gmeta["dt"]*1000)))
+    Gnpts = min(round(Int, Millisecond(station["base_trim"][2] - env["event"]["origintime"]) / 
+        Millisecond(round(Int, gmeta["dt"]*1000))), npts)es
+    Nresample = round(Int, Gnpts * gmeta["dt"] / station["green_dt"])
+    if shift < 0
+        @error("Station: "*station["network"]*"."*station["station"]*" shift is less than 0: "*string(shift))
+    end
+    if Nresample + shift <= 0
+        error("Station: "*station["network"]*"."*station["station"]*" length of Green function too short")
+    end
+    wr = zeros(NPTS, 6)
     for i = 1:6
-        _resample!(@view(wr[shift+1:shift+Nresample, i]), g[:, i])
+        # _resample!(@view(wr[shift+1:shift+Nresample, i]), g[:, i])
+        SeisTools.DataProcess.resample!(@view(wr[max(1, shift+1):shift+Nresample, i]), g[1:Gnpts, i])
     end
     station["green_fun"] = wr
     station["green_dt"] = gmeta["dt"]

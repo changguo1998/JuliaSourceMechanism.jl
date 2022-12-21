@@ -62,6 +62,35 @@ function detrendandtaper!(x::VecOrMat; ratio::Real = 0.05)
 end
 =#
 
+function pick_windowratio(x::AbstractVector{<:Real}, wl::Integer)
+    L = length(x)
+    r = zeros(L - 2*wl)
+    for i = eachindex(r)
+        r[i] = std(x[i+wl:i+2*wl])/std(x[i:i+wl])
+    end
+    (_, j) = findmax(r)
+    return (j+wl, r)
+end
+
+function _freedom(x::AbstractVecOrMat)
+    if size(x, 2) == 1
+        return 1.0
+    else
+        F = svd(x)
+        return sum(F.S)/maximum(F.S)
+    end
+end
+
+function pick_freedom(x::AbstractVecOrMat{<:Real}, wl::Integer)
+    L = size(x, 1)
+    r = zeros(L-wl)
+    for i = eachindex(r)
+        r[i] = _freedom(x[i:i+wl, :])
+    end
+    (_, j) = findmin(r)
+    return (j+wl, r)
+end
+
 function detrendandtaper!(x::AbstractVecOrMat)
     for v in eachcol(x)
         SeisTools.DataProcess.detrend!(v)
