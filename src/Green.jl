@@ -566,7 +566,7 @@ function load!(station::Dict, env::Dict)
     NPTS = round(Int, Millisecond(station["base_trim"][2] - station["base_trim"][1]) / 
         Millisecond(round(Int, gmeta["dt"]*1000)))
     Gnpts = min(round(Int, Millisecond(station["base_trim"][2] - env["event"]["origintime"]) / 
-        Millisecond(round(Int, gmeta["dt"]*1000))), npts)es
+        Millisecond(round(Int, gmeta["dt"]*1000))), npts)
     Nresample = round(Int, Gnpts * gmeta["dt"] / station["green_dt"])
     if shift < 0
         @error("Station: "*station["network"]*"."*station["station"]*" shift is less than 0: "*string(shift))
