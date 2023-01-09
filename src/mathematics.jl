@@ -64,12 +64,12 @@ end
 
 function pick_windowratio(x::AbstractVector{<:Real}, wl::Integer)
     L = length(x)
-    r = zeros(L - 2*wl)
-    for i = eachindex(r)
-        r[i] = std(x[i+wl:i+2*wl])/std(x[i:i+wl])
+    r = zeros(L - 2 * wl)
+    for i in eachindex(r)
+        r[i] = std(x[i+wl:i+2*wl]) / std(x[i:i+wl])
     end
     (_, j) = findmax(r)
-    return (j+wl, r)
+    return (j + wl, r)
 end
 
 function _freedom(x::AbstractVecOrMat)
@@ -77,18 +77,18 @@ function _freedom(x::AbstractVecOrMat)
         return 1.0
     else
         F = svd(x)
-        return sum(F.S)/maximum(F.S)
+        return sum(F.S) / maximum(F.S)
     end
 end
 
 function pick_freedom(x::AbstractVecOrMat{<:Real}, wl::Integer)
     L = size(x, 1)
-    r = zeros(L-wl)
-    for i = eachindex(r)
+    r = zeros(L - wl)
+    for i in eachindex(r)
         r[i] = _freedom(x[i:i+wl, :])
     end
     (_, j) = findmin(r)
-    return (j+wl, r)
+    return (j + wl, r)
 end
 
 function detrendandtaper!(x::AbstractVecOrMat)
@@ -195,7 +195,7 @@ function calcgreen!(env::Setting)
     idxlist = Int[]
     for i in eachindex(env["stations"])
         s = env["stations"][i]
-        tag = String(s["network"]*"."*s["station"])
+        tag = String(s["network"] * "." * s["station"])
         if !(tag in taglist)
             push!(taglist, tag)
             push!(idxlist, i)
@@ -242,8 +242,8 @@ function preprocess!(env::Setting, modules::Vector{Module})
         t = SeisTools.SAC.read(normpath(env["dataroot"], "sac", s["meta_file"]))
         trim_bt = s["base_trim"][1]
         trim_et = s["base_trim"][2]
-        (sbt, tw, _) = SeisTools.DataProcess.cut(t.data, SeisTools.SAC.DateTime(t.hdr), trim_bt, trim_et, 
-            Millisecond(round(Int, t.hdr["delta"]*1000)))
+        (sbt, tw, _) = SeisTools.DataProcess.cut(t.data, SeisTools.SAC.DateTime(t.hdr), trim_bt, trim_et,
+                                                 Millisecond(round(Int, t.hdr["delta"] * 1000)))
         s["base_begintime"] = sbt
         s["base_record"] = tw
         Green.load!(s, env)
@@ -292,5 +292,46 @@ function inverse!(env::Setting, modules::Vector{Module}, searchingMethod::Module
         mul!(newmisfit, newmisfitdetail, weightvec)
         append!(misfit, newmisfit)
     end
+    return (sdr, phaselist, misfit, misfitdetail)
+end
+
+function CAPmethod!(env::Setting)
+    phaselist = Setting[]
+    weightvec = Float64[]
+    for s in env["stations"]
+        for p in s["phases"]
+            push!(phaselist, p)
+            push!(weightvec, CAP.weight(p, s, env))
+        end
+    end
+    Lp = length(phaselist)
+    sdr = searchingMethod.newparameters(sdr, misfit)
+    Lm = length(sdr)
+    momenttensor = dc2ts.(newsdr)
+    rec2 = zeros(Lp)
+    syn2 = zeros(Lm, Lp)
+    misfitdetail = zeros(Lm, Lp)
+    misfit = zeros(Float64, Lm)
+    Threads.@threads for q = 1:Lp
+        @views rec2[q] = CAP.rec2(phaselist[q])
+    end
+    Threads.@threads for i = 1:(Lm*Lp)
+        (p, q) = divrem(i - 1, Lp)
+        p += 1
+        q += 1
+        @views syn2[p, q] = CAP.syn2(phaselist[q], momenttensor[p])
+    end
+    Lrec2 = sum(rec2)
+    Lsyn2 = sum(syn2; dims = 2)
+    Lsyn2 = reshape(Lsyn2, length(Lsyn2))
+    M0 = sqrt(Lsyn2 ./ Lrec2)
+
+    Threads.@threads for i = 1:(Lm*Lp)
+        (p, q) = divrem(i - 1, Lp)
+        p += 1
+        q += 1
+        @views misfitdetail[p, q] = CAP.misfit(phaselist[q][2], momenttensor[p] .* M0[p])
+    end
+    mul!(misfit, misfitdetail, weightvec)
     return (sdr, phaselist, misfit, misfitdetail)
 end

@@ -61,8 +61,8 @@ function ricker(t::Real, t0::Real)
     return -2 * c^3 * (1.0 - 2.0 * p^2) * exp(-p^2) / (t0^3) / sqrt(pi)
 end
 
-function energy(x::VecOrMat, p::Real=0.5)
-    mx = mean(x; dims=1)
+function energy(x::VecOrMat, p::Real = 0.5)
+    mx = mean(x; dims = 1)
     y = deepcopy(x)
     for i in axes(x, 1), j in axes(x, 2)
         y[i, j] = x[i, j] - mx[1, j]
@@ -86,7 +86,7 @@ function energy(x::VecOrMat, p::Real=0.5)
     return e
 end
 
-function stalta(w::Vector, LW::Int=20, SW::Int=5, WW::Int=0)
+function stalta(w::Vector, LW::Int = 20, SW::Int = 5, WW::Int = 0)
     N = length(w)
     WW = (WW > 0) ? WW : round(Int, N / 10)
     r = zeros(N)
@@ -116,7 +116,7 @@ function stalta(w::Vector, LW::Int=20, SW::Int=5, WW::Int=0)
     return r
 end
 
-function autopick(ge::Matrix, gn::Matrix, az::Float64; epow::Real=0.5, LW::Int=100, SW::Int=20)
+function autopick(ge::Matrix, gn::Matrix, az::Float64; epow::Real = 0.5, LW::Int = 100, SW::Int = 20)
     # npad = size(ge, 1)
     npad = 0
     gr = zeros(eltype(ge), size(ge))
@@ -185,7 +185,7 @@ function _calgreenfun_dwn_station(s, model::Matrix, depth::Real, event, strs)
     if m[1, 1] < 0.01
         m = m[2:end, :]
     end
-    m = round.(m, digits=6)
+    m = round.(m, digits = 6)
     npts = round(Int, s["green_tl"] / s["green_dt"])
     npts += mod(npts, 2)
     if "green_xl" in keys(s)
@@ -257,7 +257,7 @@ function _glib_readhead(io::IO)
     read!(io, y)
     read!(io, z)
     read!(io, t)
-    return (n=n, x=x, y=y, z=z, t=t, risetime=rt)
+    return (n = n, x = x, y = y, z = z, t = t, risetime = rt)
 end
 
 function _glib_readall(io::IO)
@@ -349,38 +349,38 @@ function ttlib_readlocation(io::IO, x::Real, y::Real, z::Real)
     h = (x - ox) / dx - ix + 1.0
     k = (y - oy) / dy - iy + 1.0
     l = (z - oz) / dz - iz + 1.0
-    seek(io, ((ix - 1) * 2 * nz * ny + (iy - 1) * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9)*4)
+    seek(io, ((ix - 1) * 2 * nz * ny + (iy - 1) * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9) * 4)
     (p000, s000) = _read_vector(io, Float32, 2)
-    seek(io, (ix * 2 * nz * ny + (iy - 1) * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9)*4)
+    seek(io, (ix * 2 * nz * ny + (iy - 1) * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9) * 4)
     (p100, s100) = _read_vector(io, Float32, 2)
-    seek(io, ((ix - 1) * 2 * nz * ny + iy * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9)*4)
+    seek(io, ((ix - 1) * 2 * nz * ny + iy * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9) * 4)
     (p010, s010) = _read_vector(io, Float32, 2)
-    seek(io, (ix * 2 * nz * ny + iy * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9)*4)
+    seek(io, (ix * 2 * nz * ny + iy * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9) * 4)
     (p110, s110) = _read_vector(io, Float32, 2)
-    seek(io, ((ix - 1) * 2 * nz * ny + (iy - 1) * 2 * nz + iz * 2 + 1 - 1 + 9)*4)
+    seek(io, ((ix - 1) * 2 * nz * ny + (iy - 1) * 2 * nz + iz * 2 + 1 - 1 + 9) * 4)
     (p001, s001) = _read_vector(io, Float32, 2)
-    seek(io, (ix * 2 * nz * ny + (iy - 1) * 2 * nz + iz * 2 + 1 - 1 + 9)*4)
+    seek(io, (ix * 2 * nz * ny + (iy - 1) * 2 * nz + iz * 2 + 1 - 1 + 9) * 4)
     (p101, s101) = _read_vector(io, Float32, 2)
-    seek(io, ((ix - 1) * 2 * nz * ny + iy * 2 * nz + iz * 2 + 1 - 1 + 9)*4)
+    seek(io, ((ix - 1) * 2 * nz * ny + iy * 2 * nz + iz * 2 + 1 - 1 + 9) * 4)
     (p011, s011) = _read_vector(io, Float32, 2)
-    seek(io, (ix * 2 * nz * ny + iy * 2 * nz + iz * 2 + 1 - 1 + 9)*4)
+    seek(io, (ix * 2 * nz * ny + iy * 2 * nz + iz * 2 + 1 - 1 + 9) * 4)
     (p111, s111) = _read_vector(io, Float32, 2)
     tp = p000 * (1.0 - h) * (1.0 - k) * (1.0 - l) +
-        p100 * h * (1.0 - k) * (1.0 - l) +
-        p010 * (1.0 - h) * k * (1.0 - l) +
-        p110 * h * k * (1.0 - l) +
-        p001 * (1.0 - h) * (1.0 - k) * l +
-        p101 * h * (1.0 - k) * l +
-        p011 * (1.0 - h) * k * l +
-        p111 * h * k * l
+         p100 * h * (1.0 - k) * (1.0 - l) +
+         p010 * (1.0 - h) * k * (1.0 - l) +
+         p110 * h * k * (1.0 - l) +
+         p001 * (1.0 - h) * (1.0 - k) * l +
+         p101 * h * (1.0 - k) * l +
+         p011 * (1.0 - h) * k * l +
+         p111 * h * k * l
     ts = s000 * (1.0 - h) * (1.0 - k) * (1.0 - l) +
-        s100 * h * (1.0 - k) * (1.0 - l) +
-        s010 * (1.0 - h) * k * (1.0 - l) +
-        s110 * h * k * (1.0 - l) +
-        s001 * (1.0 - h) * (1.0 - k) * l +
-        s101 * h * (1.0 - k) * l +
-        s011 * (1.0 - h) * k * l +
-        s111 * h * k * l
+         s100 * h * (1.0 - k) * (1.0 - l) +
+         s010 * (1.0 - h) * k * (1.0 - l) +
+         s110 * h * k * (1.0 - l) +
+         s001 * (1.0 - h) * (1.0 - k) * l +
+         s101 * h * (1.0 - k) * l +
+         s011 * (1.0 - h) * k * l +
+         s111 * h * k * l
     return (tp, ts)
 end
 
@@ -436,7 +436,7 @@ end
 function scangreenfile(path::AbstractString)
     meta = Dict{String,Any}()
     for l in filter(v -> contains(v, "#"), readlines(path))
-        sl = split(l, " "; keepempty=false)
+        sl = split(l, " "; keepempty = false)
         k = String(sl[2])
         t = eval(Meta.parse(sl[3]))
         if k == "layer"
@@ -453,7 +453,7 @@ function scangreenfile(path::AbstractString)
         end
         meta[k] = v
     end
-    greendata = readdlm(path, ','; comments=true)
+    greendata = readdlm(path, ','; comments = true)
     return (meta, greendata)
 end
 
@@ -514,9 +514,9 @@ end
 function calculategreenfun(station::Dict, env::Dict)
     (gfpath, _) = greenfilename(station, env)
     if uppercase(station["green_modeltype"]) == "DWN"
-        model = readdlm(normpath(env["dataroot"], "model", station["green_model"] * ".model"), ','; comments=true)
+        model = readdlm(normpath(env["dataroot"], "model", station["green_model"] * ".model"), ','; comments = true)
         calgreenfun_dwn(station, model, env["algorithm"]["searchdepth"], env["event"],
-                        (model=station["green_model"], green=gfpath))
+                        (model = station["green_model"], green = gfpath))
     elseif uppercase(station["green_modeltype"]) == "3D"
         load3dgreenlib(station, env["algorithm"]["searchdepth"], env["event"], gfpath)
     else
@@ -541,8 +541,8 @@ function load!(station::Dict, env::Dict)
     npts = size(tg, 1)
     nfreq = round(Int, npts / 2)
     if gmeta["type"] == "DWN"
-        (stf, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"] * npts, station["green_tsource"], 
-            -2*station["green_tsource"], 1.0)
+        (stf, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"] * npts, station["green_tsource"],
+                                        -2 * station["green_tsource"], 1.0)
         # g = _conv_timedomain(tg, stf)
         # g = SeisTools.DataProcess.conv_t(tg, stf)
         # g = SeisTools.DataProcess.conv_f(tg, stf)
@@ -561,23 +561,26 @@ function load!(station::Dict, env::Dict)
         # g = _conv_freqdomain(tg, S)
         g = tg
     end
-    shift = round(Int, Millisecond(env["event"]["origintime"] - station["base_trim"][1]) / 
-        Millisecond(round(Int, gmeta["dt"]*1000)))
-    NPTS = round(Int, Millisecond(station["base_trim"][2] - station["base_trim"][1]) / 
-        Millisecond(round(Int, gmeta["dt"]*1000)))
-    Gnpts = min(round(Int, Millisecond(station["base_trim"][2] - env["event"]["origintime"]) / 
-        Millisecond(round(Int, gmeta["dt"]*1000))), npts)
+    shift = round(Int,
+                  Millisecond(env["event"]["origintime"] - station["base_trim"][1]) /
+                  Millisecond(round(Int, gmeta["dt"] * 1000)))
+    NPTS = round(Int,
+                 Millisecond(station["base_trim"][2] - station["base_trim"][1]) /
+                 Millisecond(round(Int, gmeta["dt"] * 1000)))
+    Gnpts = min(round(Int,
+                      Millisecond(station["base_trim"][2] - env["event"]["origintime"]) /
+                      Millisecond(round(Int, gmeta["dt"] * 1000))), npts)
     Nresample = round(Int, Gnpts * gmeta["dt"] / station["green_dt"])
     if shift < 0
-        @error("Station: "*station["network"]*"."*station["station"]*" shift is less than 0: "*string(shift))
+        @error("Station: " * station["network"] * "." * station["station"] * " shift is less than 0: " * string(shift))
     end
     if Nresample + shift <= 0
-        error("Station: "*station["network"]*"."*station["station"]*" length of Green function too short")
+        error("Station: " * station["network"] * "." * station["station"] * " length of Green function too short")
     end
     wr = zeros(NPTS, 6)
     for i = 1:6
         # _resample!(@view(wr[shift+1:shift+Nresample, i]), g[:, i])
-        SeisTools.DataProcess.resample!(@view(wr[max(1, shift+1):shift+Nresample, i]), g[1:Gnpts, i])
+        SeisTools.DataProcess.resample!(@view(wr[max(1, shift + 1):shift+Nresample, i]), g[1:Gnpts, i])
     end
     station["green_fun"] = wr
     station["green_dt"] = gmeta["dt"]

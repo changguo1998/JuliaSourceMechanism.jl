@@ -9,7 +9,7 @@ function weight(p::Setting, s::Setting, e::Setting)
     if "relshift_weight" in keys(p)
         return p["relshift_weight"]
     else
-        idx = findfirst(t->t in tags, e["algorithm"]["misfit"])
+        idx = findfirst(t -> t in tags, e["algorithm"]["misfit"])
         return e["algorithm"]["weight"][idx]
     end
 end
@@ -25,7 +25,7 @@ function xcorr(u::VecOrMat, v::VecOrMat; maxlag::Union{Int,Nothing} = nothing)
         maxlag = min(Lu, Lv) - 1
     end
     r = zeros(2 * maxlag + 1, Wu * Wv)
-    for i = axes(r, 1), j = axes(r, 2)
+    for i in axes(r, 1), j in axes(r, 2)
         s = i - maxlag - 1
         (ju, jv) = divrem(j - 1, Wv)
         ju += 1
@@ -58,25 +58,25 @@ function preprocess!(phase::Setting, station::Setting, env::Setting)
                              Butterworth(phase["relshift_order"]))
         w_filt = filtfilt(fltr, w_resample)
         (_, w_trim, _) = cut(w_filt, sta["base_begintime"],
-                      phase["at"] + Millisecond(round(Int, phase["relshift_trim"][1] * 1e3)),
-                      phase["at"] + Millisecond(round(Int, phase["relshift_trim"][2] * 1e3)),
-                      Millisecond(round(Int, 1e3*phase["relshift_dt"])))
+                             phase["at"] + Millisecond(round(Int, phase["relshift_trim"][1] * 1e3)),
+                             phase["at"] + Millisecond(round(Int, phase["relshift_trim"][2] * 1e3)),
+                             Millisecond(round(Int, 1e3 * phase["relshift_dt"])))
         nm = norm(w_trim)
         w_trim ./= nm
         g = deepcopy(sta["green_fun"])
         g_resample = resample(g, sta["green_dt"] / phase["relshift_dt"]; dims = 1)
         g_filt = filtfilt(fltr, g_resample)
         (_, g_trim, _) = cut(g_filt, station["base_begintime"],
-                      station["base_begintime"] +
-                      Millisecond(round(Int, (phase["tt"] + phase["relshift_trim"][1]) * 1e3)),
-                      station["base_begintime"] +
-                      Millisecond(round(Int, (phase["tt"] + phase["relshift_trim"][2]) * 1e3)),
-                      Millisecond(round(Int, 1e3*phase["relshift_dt"])); fillval = 0.0)
+                             station["base_begintime"] +
+                             Millisecond(round(Int, (phase["tt"] + phase["relshift_trim"][1]) * 1e3)),
+                             station["base_begintime"] +
+                             Millisecond(round(Int, (phase["tt"] + phase["relshift_trim"][2]) * 1e3)),
+                             Millisecond(round(Int, 1e3 * phase["relshift_dt"])); fillval = 0.0)
         txcorr = permutedims(xcorr(w_trim, g_trim;
                                    maxlag = round(Int, phase["relshift_maxlag"] / phase["relshift_dt"])))
         phase["relshift_relation_"*c] = txcorr
         amp = zeros(6, 6)
-        for i = 1:6, j = 1:6, k = axes(g_trim, 1)
+        for i = 1:6, j = 1:6, k in axes(g_trim, 1)
             amp[i, j] += g_trim[k, i] * g_trim[k, j]
         end
         phase["relshift_record_"*c] = w_trim
@@ -95,7 +95,7 @@ function misfit(p::Setting, m::Vector)
     for c = 1:lcmp
         tr = p["relshift_relation_"*p["relshift_componentlist"][c]]
         idx[c] = 0
-        for j = axes(tr, 2)
+        for j in axes(tr, 2)
             local tv = 0.0
             for i = 1:6
                 tv += tr[i, j] * m[i]

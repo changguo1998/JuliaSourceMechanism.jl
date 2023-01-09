@@ -27,11 +27,11 @@ function preprocess!(phase::Setting, station::Setting, env::Setting)
     g = deepcopy(station["green_fun"])
     o = station["base_begintime"]
     (_, g_trim, _) = cut(g, o, o + Millisecond(round(Int, (phase["tt"] + phase["polarity_trim"][1]) * 1e3)),
-                  o + Millisecond(round(Int, (phase["tt"] + phase["polarity_trim"][2]) * 1e3)), 
-                  Millisecond(round(Int, station["green_dt"]*1e3)))
+                         o + Millisecond(round(Int, (phase["tt"] + phase["polarity_trim"][2]) * 1e3)),
+                         Millisecond(round(Int, station["green_dt"] * 1e3)))
     tvec = zeros(6)
     for j = 1:6
-        for i = axes(g_trim, 1)
+        for i in axes(g_trim, 1)
             tvec[j] += g_trim[i, j]
         end
     end

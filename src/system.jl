@@ -11,7 +11,7 @@ function parsesac(dirname::AbstractString)
     @assert isdir(dirname) "$dirname not exist"
     fs = readdir(dirname)
     metas = Vector{Dict{String,Any}}(undef, length(fs))
-    for i = eachindex(fs)
+    for i in eachindex(fs)
         # h = Seis.readsachead(normpath(dirname, fs[i]))
         h = open(SeisTools.SAC.readhead, normpath(dirname, fs[i]))
         metas[i] = Dict{String,Any}()
@@ -177,8 +177,8 @@ function init_event(dir::AbstractString)
     if !isdir(dir)
         return nothing
     end
-    for f in filter(v->endswith(v, ".jl") || endswith(v, ".m") || endswith(v, ".fig"),
-        readdir(joinpath(@__DIR__, "..", "example")))
+    for f in filter(v -> endswith(v, ".jl") || endswith(v, ".m") || endswith(v, ".fig"),
+                    readdir(joinpath(@__DIR__, "..", "example")))
         cp(joinpath(@__DIR__, "..", "example", f), joinpath(dir, f); force = true)
     end
     return nothing
