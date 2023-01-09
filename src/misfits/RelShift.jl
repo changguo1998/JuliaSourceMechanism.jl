@@ -45,7 +45,7 @@ function preprocess!(phase::Setting, station::Setting, env::Setting)
     if station["component"] != "Z"
         return nothing
     end
-    cmpsloc = findall(s -> x["network"] == station["network"] && x["station"] == station["station"], env["stations"])
+    cmpsloc = findall(x -> x["network"] == station["network"] && x["station"] == station["station"], env["stations"])
     cmplist = String[]
     for sta in env["stations"][cmpsloc]
         c = uppercase(String(sta["component"]))

@@ -295,19 +295,23 @@ function inverse!(env::Setting, modules::Vector{Module}, searchingMethod::Module
     return (sdr, phaselist, misfit, misfitdetail)
 end
 
-function CAPmethod!(env::Setting)
+function CAPmethod!(env::Setting, searchingMethod::Module)
     phaselist = Setting[]
     weightvec = Float64[]
     for s in env["stations"]
         for p in s["phases"]
-            push!(phaselist, p)
-            push!(weightvec, CAP.weight(p, s, env))
+            if !CAP.skip(p)
+                push!(phaselist, p)
+                push!(weightvec, CAP.weight(p, s, env))
+            end
         end
     end
     Lp = length(phaselist)
+    sdr = Vector{Float64}[]
+    misfit = zeros(Float64, 0)
     sdr = searchingMethod.newparameters(sdr, misfit)
     Lm = length(sdr)
-    momenttensor = dc2ts.(newsdr)
+    momenttensor = dc2ts.(sdr)
     rec2 = zeros(Lp)
     syn2 = zeros(Lm, Lp)
     misfitdetail = zeros(Lm, Lp)
@@ -324,14 +328,14 @@ function CAPmethod!(env::Setting)
     Lrec2 = sum(rec2)
     Lsyn2 = sum(syn2; dims = 2)
     Lsyn2 = reshape(Lsyn2, length(Lsyn2))
-    M0 = sqrt(Lsyn2 ./ Lrec2)
+    M0 = sqrt.(Lrec2 ./ Lsyn2)
 
     Threads.@threads for i = 1:(Lm*Lp)
         (p, q) = divrem(i - 1, Lp)
         p += 1
         q += 1
-        @views misfitdetail[p, q] = CAP.misfit(phaselist[q][2], momenttensor[p] .* M0[p])
+        @views misfitdetail[p, q] = CAP.misfit(phaselist[q], momenttensor[p] .* M0[p])
     end
     mul!(misfit, misfitdetail, weightvec)
-    return (sdr, phaselist, misfit, misfitdetail)
+    return (sdr, phaselist, misfit, misfitdetail, M0)
 end

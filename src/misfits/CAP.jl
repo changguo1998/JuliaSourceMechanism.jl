@@ -20,23 +20,55 @@ function weight(p::Setting, s::Setting, e::Setting)
     end
 end
 
+function skip(p::Setting)
+    return p["cap_skip"]
+end
+
+function _xcorr(u::VecOrMat, v::VecOrMat; maxlag::Union{Int,Nothing} = nothing)
+    Lu = size(u, 1)
+    Lv = size(v, 1)
+    Wu = size(u, 2)
+    Wv = size(v, 2)
+    if isnothing(maxlag)
+        maxlag = min(Lu, Lv) - 1
+    end
+    if maxlag > Lu + Lv - 1
+        @warn "maxlag $(maxlag) is too large, set to $(Lu + Lv - 1)"
+        maxlag = Lu + Lv - 1
+    end
+    r = zeros(2 * maxlag + 1, Wu * Wv)
+    for i in axes(r, 1), j in axes(r, 2)
+        s = i - maxlag - 1
+        (ju, jv) = divrem(j - 1, Wv)
+        ju += 1
+        jv += 1
+        minv = max(1, 1 - s)
+        maxv = min(Lv, Lu - s)
+        minu = max(1, minv + s)
+        for l = 0:(maxv-minv)
+            r[i, j] += u[minu+l, ju] * v[minv+l, jv]
+        end
+    end
+    return r
+end
+
 function preprocess!(phase::Setting, station::Setting, env::Setting)
     if (station["component"] != "Z") || (phase["type"] != "P")
         phase["cap_skip"] = true
         return nothing
     end
     phase["cap_skip"] = false
-    cmp_e = findall(s -> x["network"] == station["network"] &&
+    cmp_e = findfirst(x -> x["network"] == station["network"] &&
                              x["station"] == station["station"] &&
-                             x["component"] == station["component"], env["stations"])
-    cmp_n = findall(s -> x["network"] == station["network"] &&
+                             x["component"] == "E", env["stations"])
+    cmp_n = findfirst(x -> x["network"] == station["network"] &&
                              x["station"] == station["station"] &&
-                             x["component"] == station["component"], env["stations"])
+                             x["component"] == "N", env["stations"])
     we = deepcopy(env["stations"][cmp_e]["base_record"])
     wn = deepcopy(env["stations"][cmp_n]["base_record"])
     wz = deepcopy(station["base_record"])
-    T = [sind(station["azimuth"]) -cosd(station["azimuth"]);
-         cosd(station["azimuth"]) sind(station["azimuth"])]
+    T = [sind(station["base_azimuth"]) -cosd(station["base_azimuth"]);
+         cosd(station["base_azimuth"]) sind(station["base_azimuth"])]
     w = [we wn] * T
     wr = w[:, 1]
     wt = w[:, 2]
@@ -85,8 +117,8 @@ function preprocess!(phase::Setting, station::Setting, env::Setting)
     ge = deepcopy(env["stations"][cmp_e]["green_fun"])
     gn = deepcopy(env["stations"][cmp_n]["green_fun"])
     gz = deepcopy(station["green_fun"])
-    gr = ge .* sind(station["azimuth"]) .+ gn * cosd(station["azimuth"])
-    gt = ge .* -cosd(station["azimuth"]) .+ gn * sind(station["azimuth"])
+    gr = ge .* sind(station["base_azimuth"]) .+ gn * cosd(station["base_azimuth"])
+    gt = ge .* -cosd(station["base_azimuth"]) .+ gn * sind(station["base_azimuth"])
     gr_resample = resample(gr, station["green_dt"] / phase["cap_dt"])
     gt_resample = resample(gt, station["green_dt"] / phase["cap_dt"])
     gz_resample = resample(gz, station["green_dt"] / phase["cap_dt"])
@@ -253,9 +285,6 @@ function misfit(p::Setting, m::Vector)
 end
 
 function detail(p::Setting, m::Vector)
-    if station["component"] != "Z"
-        return 0.0
-    end
     (_, i_r_pnl) = _maxcorr(p["cap_relation_r_pnl"], m)
     (_, i_z_pnl) = _maxcorr(p["cap_relation_z_pnl"], m)
     (_, i_r_all) = _maxcorr(p["cap_relation_r_all"], m)

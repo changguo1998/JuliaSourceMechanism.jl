@@ -3,9 +3,9 @@ using Dates, DelimitedFiles, DSP, FFTW, LinearAlgebra, Printf, Statistics, TOML,
 
 Setting = Dict{String,Any}
 
-export Green, XCorr, Polarity, PSR, DTW, AbsShift, RelShift,
+export Green, XCorr, Polarity, PSR, DTW, AbsShift, RelShift, CAP,
        Grid,
-       Setting, dc2ts, sacDateTime, trim, preprocess!, inverse!, parsesac,
+       Setting, dc2ts, sacDateTime, trim, preprocess!, inverse!, CAPmethod!, parsesac,
        mergemeta, checkconfiguration, buildstationconfiguration
 
 # * basic macros and functions
