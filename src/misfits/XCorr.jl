@@ -6,8 +6,12 @@ tags = ("XCorr", "xcorr")
 properties = ["xcorr_dt", "xcorr_order", "xcorr_band", "xcorr_maxlag", "xcorr_trim"]
 
 function weight(p::Setting, s::Setting, e::Setting)
-    idx = findfirst(t -> t in tags, e["algorithm"]["misfit"])
-    return e["algorithm"]["weight"][idx]
+    if "xcorr_weight" in keys(p)
+        return p["xcorr_weight"]
+    else
+        idx = findfirst(t -> t in tags, e["algorithm"]["misfit"])
+        return e["algorithm"]["weight"][idx]
+    end
 end
 
 """
