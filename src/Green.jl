@@ -278,9 +278,9 @@ function _glib_readlocation(filename::AbstractString, x::Real, y::Real, z::Real)
         error("Locaion out of range, require x($(minimum(xs)),$(maximum(xs))), y($(minimum(ys)),$(maximum(ys))), \
             z($(minimum(zs)),$(maximum(zs))), current is x:$x, y:$y, z:$z")
     end
-    ix = max(2, findfirst(>(x), xs))
-    iy = max(2, findfirst(>(y), ys))
-    iz = max(2, findfirst(>(z), zs))
+    ix = (x == xs[end]) ? length(xs) : max(2, findfirst(>(x), xs))
+    iy = (y == ys[end]) ? length(ys) : max(2, findfirst(>(y), ys))
+    iz = (z == zs[end]) ? length(zs) : max(2, findfirst(>(z), zs))
     w = zeros(Float32, Int(n[4]), 6, 3)
     io = open(filename, "r")
     H = Mmap.mmap(io, Array{Float32,6}, (Int(n[4]), 6, 3, Int(n[3]), Int(n[2]), Int(n[1])), Int((sum(n) + 5) * 4))
