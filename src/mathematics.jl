@@ -190,7 +190,7 @@ end
 
 =#
 
-function calcgreen!(env::Setting)
+function calcgreen!(env::Setting; showinfo::Bool=false)
     taglist = String[]
     idxlist = Int[]
     for i in eachindex(env["stations"])
@@ -207,12 +207,12 @@ function calcgreen!(env::Setting)
                                                    s["meta_lon"])
         s["base_distance"] = dist
         s["base_azimuth"] = az
-        Green.calc(s, env)
+        Green.calc(s, env; showinfo=showinfo)
     end
     return nothing
 end
 
-function loaddata!(env::Setting)
+function loaddata!(env::Setting; showinfo::Bool=false)
     for s in env["stations"]
         (dist, az, _) = SeisTools.Geodesy.distance(env["event"]["latitude"], env["event"]["longitude"], s["meta_lat"],
                                                    s["meta_lon"])
@@ -227,7 +227,7 @@ function loaddata!(env::Setting)
                                                  Millisecond(round(Int, t.hdr["delta"] * 1000)))
         s["base_begintime"] = sbt
         s["base_record"] = tw
-        Green.load!(s, env)
+        Green.load!(s, env; showinfo=showinfo)
         detrendandtaper!(s["base_record"])
         detrendandtaper!(s["green_fun"])
     end
@@ -235,9 +235,9 @@ function loaddata!(env::Setting)
 end
 
 """
-preprocess!(env::Setting, modules::Vector{Module})
+preprocess!(env::Setting, modules::Vector{Module}; showinfo::Bool=false)
 """
-function preprocess!(env::Setting, modules::Vector{Module})
+function preprocess!(env::Setting, modules::Vector{Module}; showinfo::Bool=false)
     for s in env["stations"]
         t = SeisTools.SAC.read(normpath(env["dataroot"], "sac", s["meta_file"]))
         trim_bt = s["base_trim"][1]
@@ -246,7 +246,7 @@ function preprocess!(env::Setting, modules::Vector{Module})
                                                  Millisecond(round(Int, t.hdr["delta"] * 1000)))
         s["base_begintime"] = sbt
         s["base_record"] = tw
-        Green.load!(s, env)
+        Green.load!(s, env; showinfo=showinfo)
         detrendandtaper!(s["base_record"])
         detrendandtaper!(s["green_fun"])
         # taper!(s["green_fun"])

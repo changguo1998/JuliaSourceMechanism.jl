@@ -530,11 +530,13 @@ load(station::Dict, env::Dict) -> g
 
 load Green function
 """
-function load!(station::Dict, env::Dict)
+function load!(station::Dict, env::Dict; showinfo::Bool=false)
     (gfpath, gfname) = greenfilename(station, env)
     gfilename = joinpath(gfpath, gfname)
     if !isfile(gfilename)
-        @info "Green function of $(station["network"]).$(station["station"]).$(station["component"]) not exist. Calculat now"
+        if showinfo
+            @info "Green function of $(station["network"]).$(station["station"]).$(station["component"]) not exist. Calculat now"
+        end
         calculategreenfun(station, env)
     end
     (gmeta, tg) = scangreenfile(gfilename)
@@ -587,11 +589,13 @@ function load!(station::Dict, env::Dict)
     return nothing
 end
 
-function calc(station::Dict, env::Dict)
+function calc(station::Dict, env::Dict; showinfo::Bool = false)
     (gfpath, gfname) = greenfilename(station, env)
     gfilename = joinpath(gfpath, gfname)
     if !isfile(gfilename)
-        @info "Green function of $(station["network"]).$(station["station"]).$(station["component"]) not exist. Calculat now"
+        if showinfo
+            @info "Green function of $(station["network"]).$(station["station"]).$(station["component"]) not exist. Calculat now"
+        end
         calculategreenfun(station, env)
     end
     return nothing
