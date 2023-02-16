@@ -61,6 +61,7 @@ function ricker(t::Real, t0::Real)
     return -2 * c^3 * (1.0 - 2.0 * p^2) * exp(-p^2) / (t0^3) / sqrt(pi)
 end
 
+#=
 function energy(x::VecOrMat, p::Real = 0.5)
     mx = mean(x; dims = 1)
     y = deepcopy(x)
@@ -149,6 +150,7 @@ function autopick(ge::Matrix, gn::Matrix, az::Float64; epow::Real = 0.5, LW::Int
     (_, Pidx) = findmax(ratrmt)
     return (Pidx - npad, Sidx - npad)
 end
+=#
 
 # = =================
 # =        DWN
