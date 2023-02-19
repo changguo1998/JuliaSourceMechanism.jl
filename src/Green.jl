@@ -277,7 +277,7 @@ function _glib_readlocation(filename::AbstractString, x::Real, y::Real, z::Real)
     (n, xs, ys, zs, t, rt) = open(_glib_readhead, filename, "r")
     if (x > maximum(xs)) || (x < minimum(xs)) || (y > maximum(ys)) || (y < minimum(ys)) || (z > maximum(zs)) ||
        (z < minimum(zs))
-        error("Locaion out of range, require x($(minimum(xs)),$(maximum(xs))), y($(minimum(ys)),$(maximum(ys))), \
+        error("Locaion out of range in file $(filename),\nrequire x($(minimum(xs)),$(maximum(xs))), y($(minimum(ys)),$(maximum(ys))), \
             z($(minimum(zs)),$(maximum(zs))), current is x:$x, y:$y, z:$z")
     end
     ix = (x == xs[end]) ? length(xs) : max(2, findfirst(>(x), xs))
