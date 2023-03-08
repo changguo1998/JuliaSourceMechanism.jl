@@ -37,7 +37,7 @@ function newparameters(sdr::Vector{Vector{Float64}}, misfit::Vector{Float64})
     global STEP
     newsdr = Vector{Float64}[]
     for s = START[1]:STEP[1]:STOP[1], d = START[2]:STEP[2]:STOP[2], r = START[3]:STEP[3]:STOP[3]
-        push!(newsdr, [s, d, r])
+        push!(newsdr, [mod(s, 360.0), d, r])
     end
     return newsdr
 end
