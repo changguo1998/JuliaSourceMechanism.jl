@@ -2,7 +2,7 @@
 """
 module Green
 using Printf, Dates, DelimitedFiles, Statistics, LinearAlgebra, SeismicRayTrace, Mmap, FFTW, DWN, SeisTools
-import JuliaSourceMechanism: @must, @hadbetter
+import JuliaSourceMechanism: @must, @hadbetter, VelocityModel
 
 properties = ["green_dt", "green_tsource", "green_model", "green_modeltype"]
 
@@ -60,97 +60,6 @@ function ricker(t::Real, t0::Real)
     p = c * (t / t0 - 1.0)
     return -2 * c^3 * (1.0 - 2.0 * p^2) * exp(-p^2) / (t0^3) / sqrt(pi)
 end
-
-#=
-function energy(x::VecOrMat, p::Real = 0.5)
-    mx = mean(x; dims = 1)
-    y = deepcopy(x)
-    for i in axes(x, 1), j in axes(x, 2)
-        y[i, j] = x[i, j] - mx[1, j]
-    end
-    # taper!(y)
-    SeisTools.DataProcess.taper!(y)
-    e = zeros(size(y, 1))
-    emax = 0.0
-    emin = Inf64
-    for i in axes(y, 1)
-        for j in axes(y, 2)
-            e[i] += abs2(y[i, j])
-        end
-        e[i] = e[i]^p
-        emax = (emax > e[i]) ? emax : e[i]
-        emin = (emin < e[i]) ? emin : e[i]
-    end
-    for i in eachindex(e)
-        e[i] = (e[i] - emin) / (emax - emin)
-    end
-    return e
-end
-
-function stalta(w::Vector, LW::Int = 20, SW::Int = 5, WW::Int = 0)
-    N = length(w)
-    WW = (WW > 0) ? WW : round(Int, N / 10)
-    r = zeros(N)
-    maxr = 0.0
-    for i = (LW+1):(N-SW)
-        tn = 0.0
-        for j = i:min(N, i + SW)
-            tn = (tn > w[j]) ? tn : w[j]
-        end
-        td = 1e-2
-        for j = max(1, i - LW):i
-            td = (td > w[j]) ? td : w[j]
-        end
-        wt = 0.0
-        for j = max(1, i - WW):min(N, i + WW)
-            wt = (wt > w[j]) ? wt : w[j]
-        end
-        r[i] = tn / td * wt
-        if isnan(r[i])
-            r[i] = 0.0
-        end
-        maxr = (maxr > r[i]) ? maxr : r[i]
-    end
-    for i = 1:N
-        r[i] /= maxr
-    end
-    return r
-end
-
-function autopick(ge::Matrix, gn::Matrix, az::Float64; epow::Real = 0.5, LW::Int = 100, SW::Int = 20)
-    # npad = size(ge, 1)
-    npad = 0
-    gr = zeros(eltype(ge), size(ge))
-    gt = zeros(eltype(ge), size(ge))
-    sa = sind(az)
-    ca = cosd(az)
-    for i = 1:size(ge, 1), j = 1:size(ge, 2)
-        gr[i, j] = gn[i, j] * ca + ge[i, j] * sa
-        gt[i, j] = -gn[i, j] * sa + ge[i, j] * ca
-    end
-    et = energy(gt, epow)
-    # taper!(et)
-    SeisTools.DataProcess.taper!(et)
-    et = [zeros(npad); et]
-    ratt = stalta(et, LW, SW)
-    (_, Sidx) = findmax(ratt)
-    grmt = zeros(size(gr))
-    for i = 1:(Sidx-npad-1), j in axes(gr, 2)
-        grmt[i, j] = gr[i, j]
-    end
-    tmpg = deepcopy(grmt[1:(Sidx-npad-1), :])
-    # taper!(tmpg)
-    SeisTools.DataProcess.taper!(tmpg)
-    grmt[1:(Sidx-npad-1), :] .= tmpg
-    ermt = energy(grmt, epow)
-    # taper!(ermt)
-    SeisTools.DataProcess.taper!(ermt)
-    ermt = [zeros(npad); ermt]
-    ratrmt = @views stalta(ermt, LW, SW)
-    (_, Pidx) = findmax(ratrmt)
-    return (Pidx - npad, Sidx - npad)
-end
-=#
 
 # = =================
 # =        DWN
@@ -516,7 +425,15 @@ end
 function calculategreenfun(station::Dict, env::Dict)
     (gfpath, _) = greenfilename(station, env)
     if uppercase(station["green_modeltype"]) == "DWN"
-        model = readdlm(normpath(env["dataroot"], "model", station["green_model"] * ".model"), ','; comments = true)
+        modelpath = normpath(env["dataroot"], "model", station["green_model"] * ".model")
+        if !isfile(modelpath)
+            if station["green_model"] == "crust1.0"
+                writedlm(modelpath, VelocityModel.readmodel_crust10(env["latitude"], env["longitude"]) , ',')
+            else
+                error("Model file not exist", station["network"] * "." * station["station"])
+            end
+        end
+        model = readdlm(modelpath, ','; comments = true)
         calgreenfun_dwn(station, model, env["algorithm"]["searchdepth"], env["event"],
                         (model = station["green_model"], green = gfpath))
     elseif uppercase(station["green_modeltype"]) == "3D"

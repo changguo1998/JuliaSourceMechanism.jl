@@ -34,11 +34,11 @@ macro hadbetter(cond, text = "")
 end
 
 # * modules
+include("VelocityModel.jl")
 # include("Seis.jl")
 include("mathematics.jl")
 include("system.jl")
 include("Green.jl")
-include("VelocityModel.jl")
 for m in filter(endswith(".jl"), readdir(normpath(@__DIR__, "misfits/"); join = true))
     include(m)
 end
