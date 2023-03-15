@@ -6,6 +6,8 @@ import JuliaSourceMechanism: @must, @hadbetter, VelocityModel
 
 properties = ["green_dt", "green_tsource", "green_model", "green_modeltype"]
 
+_syn_lock = ReentrantLock()
+
 # = ===============================
 # =       Basic functions
 # = ===============================
@@ -41,10 +43,10 @@ function scalederf(t::Real, t0::Real)
     return (erf(p) + 1.0) / 2.0
 end
 
-function gaussian(t::Real, t0::Real)
-    c = 6.0
-    p = c * (t / t0 - 1.0)
-    return c * exp(-p^2) / t0 / sqrt(pi)
+function gauss(t::Real, t0::Real)
+    tr = sqrt(-log(0.1)) * t0 / π
+    p = (t / tr - 4.0)
+    return exp(-p^2) / tr / sqrt(pi)
 end
 
 """
@@ -428,7 +430,23 @@ function calculategreenfun(station::Dict, env::Dict)
         modelpath = normpath(env["dataroot"], "model", station["green_model"] * ".model")
         if !isfile(modelpath)
             if station["green_model"] == "crust1.0"
-                writedlm(modelpath, VelocityModel.readmodel_crust10(env["latitude"], env["longitude"]) , ',')
+                lock(_syn_lock)
+                try
+                    (modeldir, _) = splitdir(modelpath)
+                    if !isdir(modeldir)
+                        mkpath(modeldir)
+                    end
+                    _m = VelocityModel.readmodel_crust10(env["event"]["latitude"], env["event"]["longitude"])
+                    _t = zeros(size(_m, 1), 6)
+                    _t[:, 1:4] .= _m
+                    _t[:, 5] .= 200.0
+                    _t[:, 6] .= 100.0
+                    writedlm(modelpath, _t, ',')
+                catch _err
+                    throw(_err)
+                finally
+                    unlock(_syn_lock)
+                end
             else
                 error("Model file not exist", station["network"] * "." * station["station"])
             end
@@ -464,23 +482,21 @@ function load!(station::Dict, env::Dict; showinfo::Bool=false)
     if gmeta["type"] == "DWN"
         (stf, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"] * npts, station["green_tsource"],
                                         -2 * station["green_tsource"], 1.0)
-        # g = _conv_timedomain(tg, stf)
-        # g = SeisTools.DataProcess.conv_t(tg, stf)
-        # g = SeisTools.DataProcess.conv_f(tg, stf)
         g = zeros(size(tg))
         SeisTools.DataProcess.conv_f!(g, tg, stf)
     elseif uppercase(station["green_modeltype"]) == "3D"
-        # (_, S1) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, gmeta["risetime"] / 2.0, 0.0, 1.0)
-        # (_, S2) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], 0.0, 1.0)
-        # S = zeros(eltype(S1), npts)
-        # S[1] = S2[1]*S1[1]/max(1e-5, abs2(S1[1]))
-        # for i = 2:nfreq
-        #     amp = S2[i]*S1[i]/max(1e-5, abs2(S1[i]))
-        #     S[i] = amp
-        #     S[npts-i+2] = conj(amp)
-        # end
-        # g = _conv_freqdomain(tg, S)
-        g = tg
+        (s1, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], -2*station["green_tsource"], 1.0)
+        S1 = fft(s1)
+        s2 = gauss.((0.0:npts-1).*gmeta["dt"], gmeta["risetime"])
+        S2 = fft(s2)
+        F = S1 .* conj.(S2) ./ max.(1e-5, abs2.(S2))
+        SeisTools.DataProcess.taper!(tg)
+        G = fft(tg)
+        for c in eachcol(G)
+            c .*= F
+        end
+        ifft!(G)
+        g = real.(G)
     end
     shift = round(Int,
                   Millisecond(env["event"]["origintime"] - station["base_trim"][1]) /
