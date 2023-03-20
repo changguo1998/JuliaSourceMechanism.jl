@@ -5,6 +5,10 @@ import JuliaSourceMechanism: Setting
 tags = ("XCorr", "xcorr")
 properties = ["xcorr_dt", "xcorr_order", "xcorr_band", "xcorr_maxlag", "xcorr_trim"]
 
+function _Second(t::Real, prec::Type=Millisecond)
+    return prec(round(Int, t*(Second(1)/prec(1))))
+end
+
 function weight(p::Setting, s::Setting, e::Setting)
     if "xcorr_weight" in keys(p)
         return p["xcorr_weight"]
@@ -53,20 +57,23 @@ function preprocess!(phase::Setting, station::Setting, env::Setting)
                          Butterworth(phase["xcorr_order"]))
     w_filt = filtfilt(fltr, w_resample)
     (_, w_trim, _) = cut(w_filt, station["base_begintime"],
-                         phase["at"] + Millisecond(round(Int, phase["xcorr_trim"][1] * 1e3)),
-                         phase["at"] + Millisecond(round(Int, phase["xcorr_trim"][2] * 1e3)),
-                         Millisecond(round(Int, 1e3 * phase["xcorr_dt"])))
+                         phase["at"] + _Second(phase["xcorr_trim"][1]),
+                         phase["at"] + _Second(phase["xcorr_trim"][2]),
+                         _Second(phase["xcorr_dt"]))
     nm = norm(w_trim)
     w_trim ./= nm
     g = deepcopy(station["green_fun"])
     g_resample = DSP.resample(g, station["green_dt"] / phase["xcorr_dt"]; dims = 1)
     g_filt = filtfilt(fltr, g_resample)
-    (_, g_trim, _) = cut(g_filt, station["base_begintime"],
-                         station["base_begintime"] +
-                         Millisecond(round(Int, (phase["tt"] + phase["xcorr_trim"][1]) * 1e3)),
-                         station["base_begintime"] +
-                         Millisecond(round(Int, (phase["tt"] + phase["xcorr_trim"][2]) * 1e3)),
-                         Millisecond(round(Int, 1e3 * phase["xcorr_dt"])); fillval = 0.0)
+    g_trim = zeros(length(w_trim), 6)
+    _gshift = _Second(phase["tt"]+phase["xcorr_trim"][1]) / _Second(phase["xcorr_dt"]) |> _t->round(Int, _t)
+    cut!(g_trim, g_filt, _gshift, 1, length(w_trim))
+    # (_, g_trim, _) = cut(g_filt, station["base_begintime"],
+    #                      station["base_begintime"] +
+    #                      Millisecond(round(Int, (phase["tt"] + phase["xcorr_trim"][1]) * 1e3)),
+    #                      station["base_begintime"] +
+    #                      Millisecond(round(Int, (phase["tt"] + phase["xcorr_trim"][2]) * 1e3)),
+    #                      Millisecond(round(Int, 1e3 * phase["xcorr_dt"])); fillval = 0.0)
     txcorr = permutedims(_xcorr(w_trim, g_trim; maxlag = round(Int, phase["xcorr_maxlag"] / phase["xcorr_dt"])))
     phase["xcorr_relation"] = txcorr
     amp = zeros(6, 6)
