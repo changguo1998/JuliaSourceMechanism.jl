@@ -54,7 +54,9 @@ version = "0.7.7"
 
 [[deps.DWN]]
 deps = ["FFTW", "LinearAlgebra", "SpecialFunctions"]
-path = "../DWN"
+git-tree-sha1 = "35e02ff204499b96c1ca08369576aebf53ad5202"
+repo-rev = "master"
+repo-url = "/home/guochang/MyJuliaPackage/DWN"
 uuid = "cd0201ce-641d-4930-81fb-47a2ab5929d7"
 version = "0.1.0"
 
@@ -299,14 +301,14 @@ uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 
 [[deps.SeisTools]]
 deps = ["DSP", "Dates", "FFTW", "LinearAlgebra", "Printf", "SpecialFunctions", "SpecialPolynomials", "Statistics"]
-git-tree-sha1 = "36b750d579421185a5ff09c902a7fbfb7bf23c63"
+git-tree-sha1 = "278aac0ec18a13f628b2a377a24c2a2b9a928734"
 repo-rev = "develop"
 repo-url = "/home/guochang/MyJuliaPackage/SeisTools"
 uuid = "1a3a5297-0f7d-450c-8955-231a439346a8"
 version = "0.1.0"
 
 [[deps.SeismicRayTrace]]
-git-tree-sha1 = "d95074166df8f33cd1a5bfd4785cb53fa5e431d4"
+git-tree-sha1 = "b9fa758ad286054d990d6bccbdd0aaf92e029f83"
 repo-rev = "main"
 repo-url = "https://github.com/changguo1998/SeismicRayTrace.jl.git"
 uuid = "1a90cdcd-02e0-4887-85dc-4804a62d2cac"

@@ -5,8 +5,8 @@ misfit function using DTW algorithm
 """
 module DTW
 
-using Dates, DSP, Statistics, LinearAlgebra
-import JuliaSourceMechanism: trim, Setting
+using Dates, DSP, Statistics, LinearAlgebra, SeisTools.DataProcess
+import JuliaSourceMechanism: Setting
 
 tags = ("dtw", "DTW")
 properties = ["dtw_dt", "dtw_maxlag", "dtw_klim", "dtw_trim", "dtw_order", "dtw_band"]
@@ -30,18 +30,21 @@ function preprocess!(phase::Setting, station::Setting, env::Setting)
     fltr = digitalfilter(Bandpass(phase["dtw_band"][1], phase["dtw_band"][2]; fs = 1 / phase["dtw_dt"]),
                          Butterworth(phase["dtw_order"]))
     w_filt = filtfilt(fltr, w_resample)
-    w_trim = trim(w_filt, station["base_begintime"],
-                  phase["at"] + Millisecond(round(Int, phase["dtw_trim"][1] * 1e3)),
-                  phase["at"] + Millisecond(round(Int, phase["dtw_trim"][2] * 1e3)), phase["dtw_dt"])
+    (_, w_trim, _) = cut(w_filt, station["base_begintime"],
+                         phase["at"] + Millisecond(round(Int, phase["dtw_trim"][1] * 1e3)),
+                         phase["at"] + Millisecond(round(Int, phase["dtw_trim"][2] * 1e3)),
+                         Millisecond(round(Int, phase["dtw_dt"] * 1e3)))
     nm = norm(w_trim)
     w_trim ./= nm
     g = deepcopy(station["green_fun"])
     g_resample = resample(g, station["green_dt"] / phase["dtw_dt"]; dims = 1)
     g_filt = filtfilt(fltr, g_resample)
-    g_trim = trim(g_filt, env["event"]["origintime"],
-                  env["event"]["origintime"] + Millisecond(round(Int, (phase["tt"] + phase["dtw_trim"][1]) * 1e3)),
-                  env["event"]["origintime"] + Millisecond(round(Int, (phase["tt"] + phase["dtw_trim"][2]) * 1e3)),
-                  phase["dtw_dt"]; fillval = 0.0)
+    (_, g_trim, _) = cut(g_filt, station["base_begintime"],
+                         station["base_begintime"] +
+                         Millisecond(round(Int, (phase["tt"] + phase["dtw_trim"][1]) * 1e3)),
+                         station["base_begintime"] +
+                         Millisecond(round(Int, (phase["tt"] + phase["dtw_trim"][2]) * 1e3)),
+                         Millisecond(round(Int, phase["dtw_dt"])); fillval = 0.0)
     phase["dtw_record"] = w_trim
     phase["dtw_greenfun"] = g_trim
     phase["dtw_Imaxlag"] = round(Int, phase["dtw_maxlag"] / phase["dtw_dt"])
@@ -130,7 +133,7 @@ function misfit(p::Setting, m::Vector)
     e = errormap(p["dtw_record"], p["dtw_greenfun"], m, p["dtw_Imaxlag"])
     c = cumulate(e, p["dtw_Iklim"])
     t = c[end, 1]
-    for i = 1:size(c, 2)
+    for i in axes(c, 2)
         if t > c[end, i]
             t = c[end, i]
         end

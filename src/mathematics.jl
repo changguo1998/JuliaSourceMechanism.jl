@@ -1,63 +1,56 @@
-
-"""
-distance(lat1, lon1, lat2, lon2) -> (dist, az, gcarc)
-
-compute distance and azimuth between two points on the Earth according to the reference Sphere.
-distance is in km, az in degree, centered at point 1, and garc in radius degree
-"""
-function distance(lat1, lon1, lat2, lon2)
-    R = 6371.0
-    θ1 = deg2rad(90.0 - lat1)
-    θ2 = deg2rad(90.0 - lat2)
-    φ1 = deg2rad(lon1)
-    φ2 = deg2rad(lon2)
-    n1 = [sin(θ1) * cos(φ1), sin(θ1) * sin(φ1), cos(θ1)]
-    n2 = [sin(θ2) * cos(φ2), sin(θ2) * sin(φ2), cos(θ2)]
-    gcarc = acos(n1' * n2)
-    dist = R * gcarc
-    t12 = normalize(n2 .- (n1' * n2) .* n1)
-    tnorth = [sin(θ1 - pi / 2) * cos(φ1), sin(θ1 - pi / 2) * sin(φ1), cos(θ1 - pi / 2)]
-    teast = [cos(φ1 + pi / 2), sin(φ1 + pi / 2), 0.0]
-    az = atand(t12' * teast, t12' * tnorth) |> x -> mod(x, 360.0)
-    return (dist, az, gcarc)
+function pick_windowratio(x::AbstractVector{<:Real}, wl::Integer)
+    L = length(x)
+    r = zeros(L - 2 * wl)
+    for i in eachindex(r)
+        r[i] = std(x[i+wl:i+2*wl]) / std(x[i:i+wl])
+    end
+    (_, j) = findmax(r)
+    return (j + wl, r)
 end
 
-function taper!(x::VecOrMat; ratio::Real = 0.05)
-    # taper!(t->t, x, ratio=ratio)
-    taper!(t -> 1.0 - cos(t * pi / 2), x; ratio = ratio)
-    return nothing
+_procfunc(x) = mean(abs, x)
+
+function _stalta(x::AbstractVector{<:Real}, ws::Integer, wl::Integer)
+    if ws > wl
+        error("short window larger than long window")
+    end
+    L = length(x)
+    r = zeros(L-2*wl)
+    for i = eachindex(r)
+        r[i] = _procfunc(x[i+wl:i+wl+ws])/_procfunc(x[i:i+wl])
+    end
+    return r
 end
 
-function taper!(f::Function, x::VecOrMat; ratio::Real = 0.05)
-    N = size(x, 1)
-    M = max(round(Int, N * ratio), 2)
-    for i = 1:M, j = axes(x, 2)
-        x[i, j] *= f((i - 1) / (M - 1))
-        x[N-i+1, j] *= f((i - 1) / (M - 1))
-    end
-    return nothing
+function pick_stalta(x::AbstractVector{<:Real}, ws::Integer, wl::Integer)
+    r = _stalta(x, ws, wl)
+    return (argmax(r)+wl, maximum(r))
 end
 
-"""
-detrendandtaper!(x; ratio::Real=0.05)
+function _freedom(x::AbstractVecOrMat)
+    if size(x, 2) == 1
+        return 1.0
+    else
+        F = svd(x)
+        return sum(F.S) / maximum(F.S)
+    end
+end
 
-remove least square linear trend and then taper using cosine window
-"""
-function detrendandtaper!(x::VecOrMat; ratio::Real = 0.05)
-    N = size(x, 1)
-    ibar = (1 + N) / 2.0
-    xbar = mean(x; dims = 1)[:]
-    si = N * (N * N - 1) / 12
-    crossm = zeros(size(x, 2))
-    for i = axes(x, 1), j = axes(x, 2)
-        crossm[j] += i * x[i, j]
+function pick_freedom(x::AbstractVecOrMat{<:Real}, wl::Integer)
+    L = size(x, 1)
+    r = zeros(L - wl)
+    for i in eachindex(r)
+        r[i] = _freedom(x[i:i+wl, :])
     end
-    k = @. (crossm - ibar * xbar * N) / si
-    b = @. xbar - k * ibar
-    for i = 1:N, j = axes(x, 2)
-        x[i, j] -= k[j] * i + b[j]
+    (_, j) = findmin(r)
+    return (j + wl, r)
+end
+
+function detrendandtaper!(x::AbstractVecOrMat)
+    for v in eachcol(x)
+        SeisTools.DataProcess.detrend!(v)
+        SeisTools.DataProcess.taper!(v)
     end
-    taper!(x; ratio = ratio)
     return nothing
 end
 
@@ -80,114 +73,63 @@ function dc2ts(sdr::Vector{T}) where {T<:Real}
     return m
 end
 
-function sacDateTime(h)
-    return DateTime(h["nzyear"], 1, 1, h["nzhour"], h["nzmin"], h["nzsec"], h["nzmsec"]) + Day(h["nzjday"] - 1)
-end
-
-function trim(w::VecOrMat, wbt::Real, bt::Real, et::Real, dt::Real; fillval::Union{Nothing,Real} = nothing)
-    npts = round(Int, (et - bt) / dt)
-    bi = round(Int, (bt - wbt) / dt) + 1
-    if isnothing(fillval)
-        ei = bi + npts - 1
-        bi = max(1, bi)
-        ei = min(ei, length(w))
-        return (ndims(w) == 1) ? w[bi:ei] : w[bi:ei, :]
-    else
-        if ndims(w) == 1
-            nw = fill(fillval, npts)
-        else
-            nw = fill(fillval, npts, size(w, 2))
-        end
-        for i = 1:npts, j = axes(w, 2)
-            if (bi + i - 1 > 0) && (bi + i - 1 < size(w, 1))
-                nw[i, j] = w[bi+i-1, j]
-            end
-        end
-        return nw
-    end
-end
-
-function trim(w::VecOrMat, wbt::DateTime, bt::DateTime, et::DateTime, dt::Real; fillval::Union{Nothing,Real} = nothing)
-    return trim(w, 0.0, round(bt - wbt, Millisecond).value * 1e-3, round(et - wbt, Millisecond).value * 1e-3, dt;
-                fillval = fillval)
-end
-
-#=
-function trim(sac::Seis.SACFrame, bt::DateTime, et::DateTime; fillval::Union{Nothing,Real} = nothing)
-    nh = deepcopy(sac.head)
-    npts = round(Int, round(et - bt, Millisecond) / Millisecond(round(Int, sac.head["delta"] * 1000)))
-    shift = round(Int,
-                  round(bt - sacDateTime(sac.head), Millisecond) / Millisecond(round(Int, sac.head["delta"] * 1000))) +
-            1
-    if isnothing(fillval)
-        esh = shift - 1 + npts
-        shift = max(1, shift)
-        esh = min(length(sac.data[1]), esh)
-        w = deepcopy(sac.data[1][shift:esh])
-    else
-        w = fill(fillval, npts)
-        for i = 1:npts
-            if (shift - 1 + i > 1) && (shift - 1 + i < length(sac.data[1]))
-                w[i] = sac.data[1][shift-1+i]
-            end
+function calcgreen!(env::Setting; showinfo::Bool=false)
+    taglist = String[]
+    idxlist = Int[]
+    for i in eachindex(env["stations"])
+        s = env["stations"][i]
+        tag = String(s["network"] * "." * s["station"])
+        if !(tag in taglist)
+            push!(taglist, tag)
+            push!(idxlist, i)
         end
     end
-    nh["nzyear"] = year(bt)
-    nh["nzjday"] = dayofyear(bt)
-    nh["nzhour"] = hour(bt)
-    nh["nzmin"] = minute(bt)
-    nh["nzsec"] = second(bt)
-    nh["nzmsec"] = millisecond(bt)
-    nh["npts"] = length(w)
-    nh["depmen"] = mean(w)
-    nh["depmax"] = maximum(w)
-    nh["depmin"] = minimum(w)
-    nh["b"] = 0.0
-    return Seis.SACFrame(nh, [w])
-end
-=#
-
-function trim(s::Setting, bt::DateTime, et::DateTime; fillval::Union{Nothing,Real} = nothing)
-    return trim(s["base_record"], s["base_begintime"], bt, et, s["meta_dt"]; fillval = fillval)
+    Threads.@threads for i in idxlist
+        s = env["stations"][i]
+        (dist, az, _) = SeisTools.Geodesy.distance(env["event"]["latitude"], env["event"]["longitude"], s["meta_lat"],
+                                                   s["meta_lon"])
+        s["base_distance"] = dist
+        s["base_azimuth"] = az
+        Green.calc(s, env; showinfo=showinfo)
+    end
+    return nothing
 end
 
-"""
-preprocess!(env::Setting, modules::Vector{Module}; warn::Bool = true)
-"""
-function preprocess!(env::Setting, modules::Vector{Module}; warn::Bool = true)
+function loaddata!(env::Setting; showinfo::Bool=false)
     for s in env["stations"]
-        # t = Seis.readsac(normpath(env["dataroot"], "sac", s["meta_file"]))
+        (dist, az, _) = SeisTools.Geodesy.distance(env["event"]["latitude"], env["event"]["longitude"], s["meta_lat"],
+                                                   s["meta_lon"])
+        s["base_distance"] = dist
+        s["base_azimuth"] = az
+    end
+    for s in env["stations"]
         t = SeisTools.SAC.read(normpath(env["dataroot"], "sac", s["meta_file"]))
-        # if s["base_trim"][1] < s["meta_btime"]
-        #     trim_bt = s["meta_btime"]
-        #     if warn
-        #         printstyled("Begin time: ", s["base_trim"][1],
-        #                     " of $(s["network"]).$(s["station"]).$(s["component"]) is too early, set to: ", trim_bt,
-        #                     "\n"; color = :yellow)
-        #     end
-        # else
-        #     trim_bt = s["base_trim"][1]
-        # end
-        # if s["base_trim"][2] > s["meta_btime"] + Millisecond(round(Int, t.head["npts"] * t.head["delta"] * 1e3))
-        #     trim_et = s["meta_btime"] + Millisecond(round(Int, t.head["npts"] * t.head["delta"] * 1e3))
-        #     if warn
-        #         printstyled("End time: ", s["base_trim"][2],
-        #                     " of $(s["network"]).$(s["station"]).$(s["component"]) is too late, set to: ", trim_et,
-        #                     "\n"; color = :yellow)
-        #     end
-        # else
-        #     trim_et = s["base_trim"][2]
-        # end
         trim_bt = s["base_trim"][1]
         trim_et = s["base_trim"][2]
-        # t = trim(t, trim_bt, trim_et)
-        # s["base_begintime"] = sacDateTime(t.head)
-        # s["base_record"] = deepcopy(t.data[1])
-        (sbt, tw, _) = SeisTools.DataProcess.cut(t.data, SeisTools.SAC.DateTime(t.hdr), trim_bt, trim_et, 
-            Millisecond(round(Int, t.hdr["delta"]*1000)))
+        (sbt, tw, _) = SeisTools.DataProcess.cut(t.data, SeisTools.SAC.DateTime(t.hdr), trim_bt, trim_et,
+                                                 Millisecond(round(Int, t.hdr["delta"] * 1000)))
         s["base_begintime"] = sbt
         s["base_record"] = tw
-        Green.load!(s, env)
+        Green.load!(s, env; showinfo=showinfo)
+        detrendandtaper!(s["base_record"])
+        detrendandtaper!(s["green_fun"])
+    end
+    return nothing
+end
+
+"""
+preprocess!(env::Setting, modules::Vector{Module}; showinfo::Bool=false)
+"""
+function preprocess!(env::Setting, modules::Vector{Module}; showinfo::Bool=false)
+    for s in env["stations"]
+        t = SeisTools.SAC.read(normpath(env["dataroot"], "sac", s["meta_file"]))
+        trim_bt = s["base_trim"][1]
+        trim_et = s["base_trim"][2]
+        (sbt, tw, _) = SeisTools.DataProcess.cut(t.data, SeisTools.SAC.DateTime(t.hdr), trim_bt, trim_et,
+                                                 Millisecond(round(Int, t.hdr["delta"] * 1000)))
+        s["base_begintime"] = sbt
+        s["base_record"] = tw
+        Green.load!(s, env; showinfo=showinfo)
         detrendandtaper!(s["base_record"])
         detrendandtaper!(s["green_fun"])
         # taper!(s["green_fun"])
@@ -234,4 +176,49 @@ function inverse!(env::Setting, modules::Vector{Module}, searchingMethod::Module
         append!(misfit, newmisfit)
     end
     return (sdr, phaselist, misfit, misfitdetail)
+end
+
+function CAPmethod!(env::Setting, searchingMethod::Module)
+    phaselist = Setting[]
+    weightvec = Float64[]
+    for s in env["stations"]
+        for p in s["phases"]
+            if !CAP.skip(p)
+                push!(phaselist, p)
+                push!(weightvec, CAP.weight(p, s, env))
+            end
+        end
+    end
+    Lp = length(phaselist)
+    sdr = Vector{Float64}[]
+    misfit = zeros(Float64, 0)
+    sdr = searchingMethod.newparameters(sdr, misfit)
+    Lm = length(sdr)
+    momenttensor = dc2ts.(sdr)
+    rec2 = zeros(Lp)
+    syn2 = zeros(Lm, Lp)
+    misfitdetail = zeros(Lm, Lp)
+    misfit = zeros(Float64, Lm)
+    Threads.@threads for q = 1:Lp
+        @views rec2[q] = CAP.rec2(phaselist[q])
+    end
+    Threads.@threads for i = 1:(Lm*Lp)
+        (p, q) = divrem(i - 1, Lp)
+        p += 1
+        q += 1
+        @views syn2[p, q] = CAP.syn2(phaselist[q], momenttensor[p])
+    end
+    Lrec2 = sum(rec2)
+    Lsyn2 = sum(syn2; dims = 2)
+    Lsyn2 = reshape(Lsyn2, length(Lsyn2))
+    M0 = sqrt.(Lrec2 ./ Lsyn2)
+
+    Threads.@threads for i = 1:(Lm*Lp)
+        (p, q) = divrem(i - 1, Lp)
+        p += 1
+        q += 1
+        @views misfitdetail[p, q] = CAP.misfit(phaselist[q], momenttensor[p] .* M0[p])
+    end
+    mul!(misfit, misfitdetail, weightvec)
+    return (sdr, phaselist, misfit, misfitdetail, M0)
 end

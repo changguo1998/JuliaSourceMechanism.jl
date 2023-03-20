@@ -2,9 +2,11 @@
 """
 module Green
 using Printf, Dates, DelimitedFiles, Statistics, LinearAlgebra, SeismicRayTrace, Mmap, FFTW, DWN, SeisTools
-import JuliaSourceMechanism: @must, @hadbetter
+import JuliaSourceMechanism: @must, @hadbetter, VelocityModel
 
 properties = ["green_dt", "green_tsource", "green_model", "green_modeltype"]
+
+_syn_lock = ReentrantLock()
 
 # = ===============================
 # =       Basic functions
@@ -13,7 +15,7 @@ function _resample!(y::AbstractVector, x::AbstractVector)
     X = fft(x)
     n = length(y)
     Y = zeros(ComplexF64, n)
-    m = floor(Int, n / 2)
+    m = floor(Int, min(n, length(x)) / 2)
     for i = 1:m
         Y[i] = X[i]
         Y[n-i+1] = X[end-i+1]
@@ -41,10 +43,10 @@ function scalederf(t::Real, t0::Real)
     return (erf(p) + 1.0) / 2.0
 end
 
-function gaussian(t::Real, t0::Real)
-    c = 6.0
-    p = c * (t / t0 - 1.0)
-    return c * exp(-p^2) / t0 / sqrt(pi)
+function gauss(t::Real, t0::Real)
+    tr = sqrt(-log(0.1)) * t0 / π
+    p = (t / tr - 4.0)
+    return exp(-p^2) / tr / sqrt(pi)
 end
 
 """
@@ -59,95 +61,6 @@ function ricker(t::Real, t0::Real)
     c = 6.0
     p = c * (t / t0 - 1.0)
     return -2 * c^3 * (1.0 - 2.0 * p^2) * exp(-p^2) / (t0^3) / sqrt(pi)
-end
-
-function energy(x::VecOrMat, p::Real=0.5)
-    mx = mean(x; dims=1)
-    y = deepcopy(x)
-    for i in axes(x, 1), j in axes(x, 2)
-        y[i, j] = x[i, j] - mx[1, j]
-    end
-    # taper!(y)
-    SeisTools.DataProcess.taper!(y)
-    e = zeros(size(y, 1))
-    emax = 0.0
-    emin = Inf64
-    for i in axes(y, 1)
-        for j in axes(y, 2)
-            e[i] += abs2(y[i, j])
-        end
-        e[i] = e[i]^p
-        emax = (emax > e[i]) ? emax : e[i]
-        emin = (emin < e[i]) ? emin : e[i]
-    end
-    for i in eachindex(e)
-        e[i] = (e[i] - emin) / (emax - emin)
-    end
-    return e
-end
-
-function stalta(w::Vector, LW::Int=20, SW::Int=5, WW::Int=0)
-    N = length(w)
-    WW = (WW > 0) ? WW : round(Int, N / 10)
-    r = zeros(N)
-    maxr = 0.0
-    for i = (LW+1):(N-SW)
-        tn = 0.0
-        for j = i:min(N, i + SW)
-            tn = (tn > w[j]) ? tn : w[j]
-        end
-        td = 1e-2
-        for j = max(1, i - LW):i
-            td = (td > w[j]) ? td : w[j]
-        end
-        wt = 0.0
-        for j = max(1, i - WW):min(N, i + WW)
-            wt = (wt > w[j]) ? wt : w[j]
-        end
-        r[i] = tn / td * wt
-        if isnan(r[i])
-            r[i] = 0.0
-        end
-        maxr = (maxr > r[i]) ? maxr : r[i]
-    end
-    for i = 1:N
-        r[i] /= maxr
-    end
-    return r
-end
-
-function autopick(ge::Matrix, gn::Matrix, az::Float64; epow::Real=0.5, LW::Int=100, SW::Int=20)
-    # npad = size(ge, 1)
-    npad = 0
-    gr = zeros(eltype(ge), size(ge))
-    gt = zeros(eltype(ge), size(ge))
-    sa = sind(az)
-    ca = cosd(az)
-    for i = 1:size(ge, 1), j = 1:size(ge, 2)
-        gr[i, j] = gn[i, j] * ca + ge[i, j] * sa
-        gt[i, j] = -gn[i, j] * sa + ge[i, j] * ca
-    end
-    et = energy(gt, epow)
-    # taper!(et)
-    SeisTools.DataProcess.taper!(et)
-    et = [zeros(npad); et]
-    ratt = stalta(et, LW, SW)
-    (_, Sidx) = findmax(ratt)
-    grmt = zeros(size(gr))
-    for i = 1:(Sidx-npad-1), j in axes(gr, 2)
-        grmt[i, j] = gr[i, j]
-    end
-    tmpg = deepcopy(grmt[1:(Sidx-npad-1), :])
-    # taper!(tmpg)
-    SeisTools.DataProcess.taper!(tmpg)
-    grmt[1:(Sidx-npad-1), :] .= tmpg
-    ermt = energy(grmt, epow)
-    # taper!(ermt)
-    SeisTools.DataProcess.taper!(ermt)
-    ermt = [zeros(npad); ermt]
-    ratrmt = @views stalta(ermt, LW, SW)
-    (_, Pidx) = findmax(ratrmt)
-    return (Pidx - npad, Sidx - npad)
 end
 
 # = =================
@@ -185,10 +98,15 @@ function _calgreenfun_dwn_station(s, model::Matrix, depth::Real, event, strs)
     if m[1, 1] < 0.01
         m = m[2:end, :]
     end
-    m = round.(m, digits=6)
+    m = round.(m, digits = 6)
     npts = round(Int, s["green_tl"] / s["green_dt"])
     npts += mod(npts, 2)
-    xl = ceil((s["green_dt"] * npts * maximum(m[:, 2]) + s["base_distance"]) / 10.0) * 10.0
+    if "green_xl" in keys(s)
+        xl = s["green_xl"]
+    else
+        xl = ceil((s["green_dt"] * npts * maximum(m[:, 2]) + s["base_distance"]) / 10.0) * 10.0
+        s["green_xl"] = xl
+    end
     spec = DWN.dwn(m, zh, 1.0, [(rd, az)], zr, npts, s["green_dt"], xl, s["green_dt"], s["green_m"])
     w = DWN.freqspec2timeseries(spec, npts)
     green = [w[1, 2, :]... w[1, 1, :]... -w[1, 3, :]...]
@@ -199,9 +117,9 @@ function _calgreenfun_dwn_station(s, model::Matrix, depth::Real, event, strs)
         m0 = deepcopy(m)
         m0[2:end, 1] .= cumsum(m0[:, 1])[1:end-1]
         m0[1, 1] = 0.0
-        tps = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 2])
-        tss = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 3])
-        (minimum(v -> v.t, tps), minimum(v -> v.t, tss))
+        tp = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 2])
+        ts = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 3])
+        (tp.phase.t, ts.phase.t)
     end
     for c = 1:3
         targetpath = joinpath(targetdir, @sprintf("%s.%s.%s.gf", s["network"], s["station"], cmps[c]))
@@ -252,7 +170,7 @@ function _glib_readhead(io::IO)
     read!(io, y)
     read!(io, z)
     read!(io, t)
-    return (n=n, x=x, y=y, z=z, t=t, risetime=rt)
+    return (n = n, x = x, y = y, z = z, t = t, risetime = rt)
 end
 
 function _glib_readall(io::IO)
@@ -270,12 +188,12 @@ function _glib_readlocation(filename::AbstractString, x::Real, y::Real, z::Real)
     (n, xs, ys, zs, t, rt) = open(_glib_readhead, filename, "r")
     if (x > maximum(xs)) || (x < minimum(xs)) || (y > maximum(ys)) || (y < minimum(ys)) || (z > maximum(zs)) ||
        (z < minimum(zs))
-        error("Locaion out of range, require x($(minimum(xs)),$(maximum(xs))), y($(minimum(ys)),$(maximum(ys))), \
+        error("Locaion out of range in file $(filename),\nrequire x($(minimum(xs)),$(maximum(xs))), y($(minimum(ys)),$(maximum(ys))), \
             z($(minimum(zs)),$(maximum(zs))), current is x:$x, y:$y, z:$z")
     end
-    ix = max(2, findfirst(>(x), xs))
-    iy = max(2, findfirst(>(y), ys))
-    iz = max(2, findfirst(>(z), zs))
+    ix = (x == xs[end]) ? length(xs) : max(2, findfirst(>(x), xs))
+    iy = (y == ys[end]) ? length(ys) : max(2, findfirst(>(y), ys))
+    iz = (z == zs[end]) ? length(zs) : max(2, findfirst(>(z), zs))
     w = zeros(Float32, Int(n[4]), 6, 3)
     io = open(filename, "r")
     H = Mmap.mmap(io, Array{Float32,6}, (Int(n[4]), 6, 3, Int(n[3]), Int(n[2]), Int(n[1])), Int((sum(n) + 5) * 4))
@@ -344,38 +262,38 @@ function ttlib_readlocation(io::IO, x::Real, y::Real, z::Real)
     h = (x - ox) / dx - ix + 1.0
     k = (y - oy) / dy - iy + 1.0
     l = (z - oz) / dz - iz + 1.0
-    seek(io, ((ix - 1) * 2 * nz * ny + (iy - 1) * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9)*4)
+    seek(io, ((ix - 1) * 2 * nz * ny + (iy - 1) * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9) * 4)
     (p000, s000) = _read_vector(io, Float32, 2)
-    seek(io, (ix * 2 * nz * ny + (iy - 1) * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9)*4)
+    seek(io, (ix * 2 * nz * ny + (iy - 1) * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9) * 4)
     (p100, s100) = _read_vector(io, Float32, 2)
-    seek(io, ((ix - 1) * 2 * nz * ny + iy * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9)*4)
+    seek(io, ((ix - 1) * 2 * nz * ny + iy * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9) * 4)
     (p010, s010) = _read_vector(io, Float32, 2)
-    seek(io, (ix * 2 * nz * ny + iy * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9)*4)
+    seek(io, (ix * 2 * nz * ny + iy * 2 * nz + (iz - 1) * 2 + 1 - 1 + 9) * 4)
     (p110, s110) = _read_vector(io, Float32, 2)
-    seek(io, ((ix - 1) * 2 * nz * ny + (iy - 1) * 2 * nz + iz * 2 + 1 - 1 + 9)*4)
+    seek(io, ((ix - 1) * 2 * nz * ny + (iy - 1) * 2 * nz + iz * 2 + 1 - 1 + 9) * 4)
     (p001, s001) = _read_vector(io, Float32, 2)
-    seek(io, (ix * 2 * nz * ny + (iy - 1) * 2 * nz + iz * 2 + 1 - 1 + 9)*4)
+    seek(io, (ix * 2 * nz * ny + (iy - 1) * 2 * nz + iz * 2 + 1 - 1 + 9) * 4)
     (p101, s101) = _read_vector(io, Float32, 2)
-    seek(io, ((ix - 1) * 2 * nz * ny + iy * 2 * nz + iz * 2 + 1 - 1 + 9)*4)
+    seek(io, ((ix - 1) * 2 * nz * ny + iy * 2 * nz + iz * 2 + 1 - 1 + 9) * 4)
     (p011, s011) = _read_vector(io, Float32, 2)
-    seek(io, (ix * 2 * nz * ny + iy * 2 * nz + iz * 2 + 1 - 1 + 9)*4)
+    seek(io, (ix * 2 * nz * ny + iy * 2 * nz + iz * 2 + 1 - 1 + 9) * 4)
     (p111, s111) = _read_vector(io, Float32, 2)
     tp = p000 * (1.0 - h) * (1.0 - k) * (1.0 - l) +
-        p100 * h * (1.0 - k) * (1.0 - l) +
-        p010 * (1.0 - h) * k * (1.0 - l) +
-        p110 * h * k * (1.0 - l) +
-        p001 * (1.0 - h) * (1.0 - k) * l +
-        p101 * h * (1.0 - k) * l +
-        p011 * (1.0 - h) * k * l +
-        p111 * h * k * l
+         p100 * h * (1.0 - k) * (1.0 - l) +
+         p010 * (1.0 - h) * k * (1.0 - l) +
+         p110 * h * k * (1.0 - l) +
+         p001 * (1.0 - h) * (1.0 - k) * l +
+         p101 * h * (1.0 - k) * l +
+         p011 * (1.0 - h) * k * l +
+         p111 * h * k * l
     ts = s000 * (1.0 - h) * (1.0 - k) * (1.0 - l) +
-        s100 * h * (1.0 - k) * (1.0 - l) +
-        s010 * (1.0 - h) * k * (1.0 - l) +
-        s110 * h * k * (1.0 - l) +
-        s001 * (1.0 - h) * (1.0 - k) * l +
-        s101 * h * (1.0 - k) * l +
-        s011 * (1.0 - h) * k * l +
-        s111 * h * k * l
+         s100 * h * (1.0 - k) * (1.0 - l) +
+         s010 * (1.0 - h) * k * (1.0 - l) +
+         s110 * h * k * (1.0 - l) +
+         s001 * (1.0 - h) * (1.0 - k) * l +
+         s101 * h * (1.0 - k) * l +
+         s011 * (1.0 - h) * k * l +
+         s111 * h * k * l
     return (tp, ts)
 end
 
@@ -387,7 +305,7 @@ function ttlib_readlocation(path::AbstractString, x::Real, y::Real, z::Real)
 end
 
 function load3dgreenlib(s, depth::Real, event, targetdir::AbstractString)
-    (r, baz, _) = SeisTool.Geodesy.distance(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])
+    (r, baz, _) = SeisTools.Geodesy.distance(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])
     x = r * cosd(baz)
     y = r * sind(baz)
     (rt, t, w) = _glib_readlocation(abspath(s["green_modelpath"]), x, y, depth)
@@ -431,7 +349,7 @@ end
 function scangreenfile(path::AbstractString)
     meta = Dict{String,Any}()
     for l in filter(v -> contains(v, "#"), readlines(path))
-        sl = split(l, " "; keepempty=false)
+        sl = split(l, " "; keepempty = false)
         k = String(sl[2])
         t = eval(Meta.parse(sl[3]))
         if k == "layer"
@@ -448,7 +366,7 @@ function scangreenfile(path::AbstractString)
         end
         meta[k] = v
     end
-    greendata = readdlm(path, ','; comments=true)
+    greendata = readdlm(path, ','; comments = true)
     return (meta, greendata)
 end
 
@@ -459,7 +377,7 @@ function printgreenfile(path::AbstractString, meta::Dict{String,Any}, gf::Abstra
     open(path, "w") do io
         for k in sort(collect(keys(meta)))
             if typeof(meta[k]) <: AbstractMatrix
-                s = "# " * string(k) * "\n" * join("# layer " .* mat2line(meta[k], " "), "\n")
+                s = "# " * string(k) * " Matrix\n" * join("# layer " .* mat2line(meta[k], " "), "\n")
             else
                 s = "# " * string(k) * " " * string(typeof(meta[k])) * " " * string(meta[k])
             end
@@ -509,9 +427,33 @@ end
 function calculategreenfun(station::Dict, env::Dict)
     (gfpath, _) = greenfilename(station, env)
     if uppercase(station["green_modeltype"]) == "DWN"
-        model = readdlm(normpath(env["dataroot"], "model", station["green_model"] * ".model"), ','; comments=true)
+        modelpath = normpath(env["dataroot"], "model", station["green_model"] * ".model")
+        if !isfile(modelpath)
+            if station["green_model"] == "crust1.0"
+                lock(_syn_lock)
+                try
+                    (modeldir, _) = splitdir(modelpath)
+                    if !isdir(modeldir)
+                        mkpath(modeldir)
+                    end
+                    _m = VelocityModel.readmodel_crust10(env["event"]["latitude"], env["event"]["longitude"])
+                    _t = zeros(size(_m, 1), 6)
+                    _t[:, 1:4] .= _m
+                    _t[:, 5] .= 200.0
+                    _t[:, 6] .= 100.0
+                    writedlm(modelpath, _t, ',')
+                catch _err
+                    throw(_err)
+                finally
+                    unlock(_syn_lock)
+                end
+            else
+                error("Model file not exist", station["network"] * "." * station["station"])
+            end
+        end
+        model = readdlm(modelpath, ','; comments = true)
         calgreenfun_dwn(station, model, env["algorithm"]["searchdepth"], env["event"],
-                        (model=station["green_model"], green=gfpath))
+                        (model = station["green_model"], green = gfpath))
     elseif uppercase(station["green_modeltype"]) == "3D"
         load3dgreenlib(station, env["algorithm"]["searchdepth"], env["event"], gfpath)
     else
@@ -525,41 +467,72 @@ load(station::Dict, env::Dict) -> g
 
 load Green function
 """
-function load!(station::Dict, env::Dict)
+function load!(station::Dict, env::Dict; showinfo::Bool=false)
     (gfpath, gfname) = greenfilename(station, env)
     gfilename = joinpath(gfpath, gfname)
     if !isfile(gfilename)
-        @info "Green function of $(station["network"]).$(station["station"]).$(station["component"]) not exist. Calculat now"
+        if showinfo
+            @info "Green function of $(station["network"]).$(station["station"]).$(station["component"]) not exist. Calculat now"
+        end
         calculategreenfun(station, env)
     end
     (gmeta, tg) = scangreenfile(gfilename)
     npts = size(tg, 1)
     nfreq = round(Int, npts / 2)
     if gmeta["type"] == "DWN"
-        (stf, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"] * npts, station["green_tsource"], 0.0, 1.0)
-        g = _conv_timedomain(tg, stf)
+        (stf, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"] * npts, station["green_tsource"],
+                                        -2 * station["green_tsource"], 1.0)
+        g = zeros(size(tg))
+        SeisTools.DataProcess.conv_f!(g, tg, stf)
     elseif uppercase(station["green_modeltype"]) == "3D"
-        # (_, S1) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, gmeta["risetime"] / 2.0, 0.0, 1.0)
-        # (_, S2) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], 0.0, 1.0)
-        # S = zeros(eltype(S1), npts)
-        # S[1] = S2[1]*S1[1]/max(1e-5, abs2(S1[1]))
-        # for i = 2:nfreq
-        #     amp = S2[i]*S1[i]/max(1e-5, abs2(S1[i]))
-        #     S[i] = amp
-        #     S[npts-i+2] = conj(amp)
-        # end
-        # g = _conv_freqdomain(tg, S)
-        g = tg
+        (s1, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], -2*station["green_tsource"], 1.0)
+        S1 = fft(s1)
+        s2 = gauss.((0.0:npts-1).*gmeta["dt"], gmeta["risetime"])
+        S2 = fft(s2)
+        F = S1 .* conj.(S2) ./ max.(1e-5, abs2.(S2))
+        SeisTools.DataProcess.taper!(tg)
+        G = fft(tg)
+        for c in eachcol(G)
+            c .*= F
+        end
+        ifft!(G)
+        g = real.(G)
     end
-    shift = round(Int, Millisecond(env["event"]["origintime"] - station["trim_bt"]) / 
-        Millisecond(round(Int, gmeta["dt"]*1000)))
-    Nresample = round(Int, npts * gmeta["dt"] / station["green_dt"])
-    Nresample += mod(Nresample, 2)
-    wr = zeros(Nresample+shift, 6)
+    shift = round(Int,
+                  Millisecond(env["event"]["origintime"] - station["base_trim"][1]) /
+                  Millisecond(round(Int, gmeta["dt"] * 1000)))
+    NPTS = round(Int,
+                 Millisecond(station["base_trim"][2] - station["base_trim"][1]) /
+                 Millisecond(round(Int, gmeta["dt"] * 1000)))
+    Gnpts = min(round(Int,
+                      Millisecond(station["base_trim"][2] - env["event"]["origintime"]) /
+                      Millisecond(round(Int, gmeta["dt"] * 1000))), npts)
+    Nresample = round(Int, Gnpts * gmeta["dt"] / station["green_dt"])
+    if shift < 0
+        @error("Station: " * station["network"] * "." * station["station"] * " shift is less than 0: " * string(shift))
+    end
+    if Nresample + shift <= 0
+        error("Station: " * station["network"] * "." * station["station"] * " length of Green function too short")
+    end
+    wr = zeros(NPTS, 6)
     for i = 1:6
-        _resample!(@view(wr[shift+1:shift+Nresample, i]), g[:, i])
+        # _resample!(@view(wr[shift+1:shift+Nresample, i]), g[:, i])
+        SeisTools.DataProcess.resample!(@view(wr[max(1, shift + 1):shift+Nresample, i]), g[1:Gnpts, i])
     end
     station["green_fun"] = wr
+    station["green_dt"] = gmeta["dt"]
+    return nothing
+end
+
+function calc(station::Dict, env::Dict; showinfo::Bool = false)
+    (gfpath, gfname) = greenfilename(station, env)
+    gfilename = joinpath(gfpath, gfname)
+    if !isfile(gfilename)
+        if showinfo
+            @info "Green function of $(station["network"]).$(station["station"]).$(station["component"]) not exist. Calculat now"
+        end
+        calculategreenfun(station, env)
+    end
     return nothing
 end
 
