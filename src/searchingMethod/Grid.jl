@@ -36,7 +36,19 @@ end
 function newparameters(sdr::Vector{Vector{Float64}}, misfit::Vector{Float64})
     global STEP
     newsdr = Vector{Float64}[]
-    for s = START[1]:STEP[1]:STOP[1], d = START[2]:STEP[2]:STOP[2], r = START[3]:STEP[3]:STOP[3]
+    ss = collect(START[1]:STEP[1]:STOP[1])
+    if !(mod(STOP[1], 360) in ss)
+        push!(ss, STOP[1])
+    end
+    ds = collect(START[2]:STEP[2]:STOP[2])
+    if ds[end] != STOP[2]
+        push!(ds, STOP[2])
+    end
+    rs = collect(START[3]:STEP[3]:STOP[3])
+    if rs[end] != STOP[3]
+        push!(rs, STOP[3])
+    end
+    for s = ss, d = ds, r = rs
         push!(newsdr, [mod(s, 360.0), d, r])
     end
     return newsdr

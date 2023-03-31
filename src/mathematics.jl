@@ -36,12 +36,17 @@ function _freedom(x::AbstractVecOrMat)
     end
 end
 
-function pick_freedom(x::AbstractVecOrMat{<:Real}, wl::Integer)
+function _freedom_win(x::AbstractVecOrMat, wl::Integer)
     L = size(x, 1)
     r = zeros(L - wl)
     for i in eachindex(r)
         r[i] = _freedom(x[i:i+wl, :])
     end
+    return r
+end
+
+function pick_freedom(x::AbstractVecOrMat{<:Real}, wl::Integer)
+    r = _freedom_win(x, wl)
     (_, j) = findmin(r)
     return (j + wl, r)
 end
