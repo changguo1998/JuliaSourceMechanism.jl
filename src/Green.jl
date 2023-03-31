@@ -81,11 +81,11 @@ input:
 function _calgreenfun_dwn_station(s, model::Matrix, depth::Real, event, strs)
     # initial
     zr = 0.0
-    el = s["meta_el"] / 1000.0
-    zh = depth + el
+    el = round(s["meta_el"] / 1000.0, digits=3)
+    zh = round(depth + el, digits=3)
     rd = s["base_distance"]
     az = s["base_azimuth"]
-    dep = model[:, 1] .+ el
+    dep = round.(model[:, 1] .+ el, digits=3)
     # process model
     l = findall(dep .> 0.0)
     if l[1] > 1
@@ -117,6 +117,7 @@ function _calgreenfun_dwn_station(s, model::Matrix, depth::Real, event, strs)
         m0 = deepcopy(m)
         m0[2:end, 1] .= cumsum(m0[:, 1])[1:end-1]
         m0[1, 1] = 0.0
+        m0 = round.(m0, digits=6)
         tp = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 2])
         ts = raytrace_fastest(0.0, zh, rd, m0[:, 1], m0[:, 3])
         (tp.phase.t, ts.phase.t)
@@ -359,6 +360,8 @@ function scangreenfile(path::AbstractString)
             else
                 v = permutedims(parse.(Float64, sl[3:end]))
             end
+        elseif k == "model"
+            v = zeros(0, 6)
         elseif t <: Real
             v = parse(t, sl[4])
         else
