@@ -508,6 +508,8 @@ function calculategreenfun(station::Dict, env::Dict)
                         (model = station["green_model"], green = gfpath))
     elseif uppercase(station["green_modeltype"]) == "3D"
         load3dgreenlib(station, env["algorithm"]["searchdepth"], env["event"], gfpath)
+    elseif uppercase(station["green_modeltype"]) == "2D"
+        load2dgreenlib(station, env["algorithm"]["searchdepth"], env["event"], gfpath)
     else
         error("Unknown Green lib type, station: ", station["network"] * "." * station["station"])
     end
@@ -537,6 +539,19 @@ function load!(station::Dict, env::Dict; showinfo::Bool=false)
         g = zeros(size(tg))
         SeisTools.DataProcess.conv_f!(g, tg, stf)
     elseif uppercase(station["green_modeltype"]) == "3D"
+        (s1, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], -2*station["green_tsource"], 1.0)
+        S1 = fft(s1)
+        s2 = gauss.((0.0:npts-1).*gmeta["dt"], gmeta["risetime"])
+        S2 = fft(s2)
+        F = S1 .* conj.(S2) ./ max.(1e-5, abs2.(S2))
+        SeisTools.DataProcess.taper!(tg)
+        G = fft(tg)
+        for c in eachcol(G)
+            c .*= F
+        end
+        ifft!(G)
+        g = real.(G)
+    elseif uppercase(station["green_modeltype"]) == "2D"
         (s1, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], -2*station["green_tsource"], 1.0)
         S1 = fft(s1)
         s2 = gauss.((0.0:npts-1).*gmeta["dt"], gmeta["risetime"])
