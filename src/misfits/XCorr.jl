@@ -52,7 +52,7 @@ function preprocess!(phase::Setting, station::Setting, env::Setting)
     @debug "prepare $(tags[1]) data for station: $(station["network"]).$(station["station"]).$(station["component"]) \
     phase: $(phase["type"])"
     w = deepcopy(station["base_record"])
-    w_resample = DSP.resample(w, station["meta_dt"] / phase["xcorr_dt"])
+    w_resample = DataProcess.resample(w, station["meta_dt"] / phase["xcorr_dt"])
     fltr = digitalfilter(Bandpass(phase["xcorr_band"][1], phase["xcorr_band"][2]; fs = 1 / phase["xcorr_dt"]),
                          Butterworth(phase["xcorr_order"]))
     w_filt = filtfilt(fltr, w_resample)
@@ -63,7 +63,7 @@ function preprocess!(phase::Setting, station::Setting, env::Setting)
     nm = norm(w_trim)
     w_trim ./= nm
     g = deepcopy(station["green_fun"])
-    g_resample = DSP.resample(g, station["green_dt"] / phase["xcorr_dt"]; dims = 1)
+    g_resample = DataProcess.resample(g, station["green_dt"] / phase["xcorr_dt"])
     g_filt = filtfilt(fltr, g_resample)
     g_trim = zeros(length(w_trim), 6)
     _gshift = _Second(phase["tt"]+phase["xcorr_trim"][1]) / _Second(phase["xcorr_dt"]) |> _t->round(Int, _t)
