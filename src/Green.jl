@@ -342,10 +342,34 @@ end
 # =        2D
 # = =================
 
+function _glib_readlocation2d(filename::AbstractString, x::Real, z::Real)
+    (n, xs, ys, zs, t, rt) = open(_glib_readhead, filename, "r")
+    if (x > maximum(xs)) || (x < minimum(xs)) || (z > maximum(zs)) ||
+       (z < minimum(zs))
+        error("Locaion out of range in file $(filename),\nrequire x($(minimum(xs)),$(maximum(xs))), \
+            z($(minimum(zs)),$(maximum(zs))), current is x:$x, z:$z")
+    end
+    ix = (x == xs[end]) ? length(xs) : max(2, findfirst(>(x), xs))
+    iz = (z == zs[end]) ? length(zs) : max(2, findfirst(>(z), zs))
+    w = zeros(Float32, Int(n[4]), 6, 3)
+    io = open(filename, "r")
+    H = Mmap.mmap(io, Array{Float32,6}, (Int(n[4]), 6, 3, Int(n[3]), Int(n[2]), Int(n[1])), Int((sum(n) + 5) * 4))
+    h = (x - xs[ix-1]) / (xs[ix] - xs[ix-1])
+    l = (z - zs[iz-1]) / (zs[iz] - zs[iz-1])
+    for id = 1:3, ic = 1:6, it = 1:Int(n[4])
+        w[it, ic, id] = H[it, ic, id, iz, 1, ix] * h * l +
+                        H[it, ic, id, iz, 1, ix-1] * (1.0 - h) * l +
+                        H[it, ic, id, iz-1, 1, ix] * h * (1.0 - l) +
+                        H[it, ic, id, iz-1, 1, ix-1] * (1.0 - h) * (1.0 - l)
+    end
+    close(io)
+    return (rt, t, w)
+end
+
 function load2dgreenlib(s, depth::Real, event, targetdir::AbstractString)
     (r, baz, _) = SeisTools.Geodesy.distance(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])
     raz = mod(baz+180.0, 360.0)
-    (rt, t, w) = _glib_readlocation(abspath(s["green_modelpath"]), -r, 0.0, depth)
+    (rt, t, w) = _glib_readlocation2d(abspath(s["green_modelpath"]), -r, depth)
     dt = t[2] - t[1] |> Float64
     (tp, ts) = ttlib_readlocation(abspath(s["green_ttlibpath"]), -r, 0.0, depth)
     mkpath(targetdir)
@@ -366,7 +390,7 @@ function load2dgreenlib(s, depth::Real, event, targetdir::AbstractString)
     gt = [wr wt wd] * Tt
     we = gt[:, 7:12]
     wn = gt[:, 1:6]
-    wz = -wd[:, 13:18]
+    wz = -gt[:, 13:18]
     cmps = ["E", "N", "Z"]
     green = [we wn wz]
     for c = 1:3
@@ -522,6 +546,7 @@ load(station::Dict, env::Dict) -> g
 load Green function
 """
 function load!(station::Dict, env::Dict; showinfo::Bool=false)
+    @debug "load greenfun of station: $(station["network"]).$(station["station"])"
     (gfpath, gfname) = greenfilename(station, env)
     gfilename = joinpath(gfpath, gfname)
     if !isfile(gfilename)
@@ -533,6 +558,7 @@ function load!(station::Dict, env::Dict; showinfo::Bool=false)
     (gmeta, tg) = scangreenfile(gfilename)
     npts = size(tg, 1)
     nfreq = round(Int, npts / 2)
+    @debug "green type: "*gmeta["type"]
     if gmeta["type"] == "DWN"
         (stf, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"] * npts, station["green_tsource"],
                                         -2 * station["green_tsource"], 1.0)
@@ -575,6 +601,7 @@ function load!(station::Dict, env::Dict; showinfo::Bool=false)
                       Millisecond(station["base_trim"][2] - env["event"]["origintime"]) /
                       Millisecond(round(Int, gmeta["dt"] * 1000))), npts)
     Nresample = round(Int, Gnpts * gmeta["dt"] / station["green_dt"])
+    @debug "NPTS: $NPTS, Gnpts: $Gnpts, Nresample: $Nresample"
     if shift < 0
         @error("Station: " * station["network"] * "." * station["station"] * " shift is less than 0: " * string(shift))
     end

@@ -6,7 +6,7 @@ tags = ("XCorr", "xcorr")
 properties = ["xcorr_dt", "xcorr_order", "xcorr_band", "xcorr_maxlag", "xcorr_trim"]
 
 function _Second(t::Real, prec::Type=Millisecond)
-    return prec(round(Int, t*(Second(1)/prec(1))))
+    return prec(round(Int, t*(prec(Second(1))/prec(1))))
 end
 
 function weight(p::Setting, s::Setting, e::Setting)
