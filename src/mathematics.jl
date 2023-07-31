@@ -91,10 +91,12 @@ function calcgreen!(env::Setting; showinfo::Bool=false)
     end
     Threads.@threads for i in idxlist
         s = env["stations"][i]
-        (dist, az, _) = SeisTools.Geodesy.distance(env["event"]["latitude"], env["event"]["longitude"], s["meta_lat"],
-                                                   s["meta_lon"])
-        s["base_distance"] = dist
-        s["base_azimuth"] = az
+        # (dist, az, _) = SeisTools.Geodesy.distance(env["event"]["latitude"], env["event"]["longitude"], s["meta_lat"],
+        #                                            s["meta_lon"])
+        s["base_distance"] = SeisTools.Geodesy.distance(env["event"]["latitude"], 
+            env["event"]["longitude"], s["meta_lat"], s["meta_lon"])*0.001
+        s["base_azimuth"] = SeisTools.Geodesy.azimuth(env["event"]["latitude"], 
+            env["event"]["longitude"], s["meta_lat"], s["meta_lon"])
         Green.calc(s, env; showinfo=showinfo)
     end
     return nothing
@@ -102,10 +104,12 @@ end
 
 function loaddata!(env::Setting; showinfo::Bool=false)
     for s in env["stations"]
-        (dist, az, _) = SeisTools.Geodesy.distance(env["event"]["latitude"], env["event"]["longitude"], s["meta_lat"],
-                                                   s["meta_lon"])
-        s["base_distance"] = dist
-        s["base_azimuth"] = az
+        # (dist, az, _) = SeisTools.Geodesy.distance(env["event"]["latitude"], env["event"]["longitude"], s["meta_lat"],
+        #                                            s["meta_lon"])
+        s["base_distance"] = SeisTools.Geodesy.distance(env["event"]["latitude"], 
+            env["event"]["longitude"], s["meta_lat"], s["meta_lon"])*0.001
+        s["base_azimuth"] = SeisTools.Geodesy.azimuth(env["event"]["latitude"], 
+            env["event"]["longitude"], s["meta_lat"], s["meta_lon"])
     end
     for s in env["stations"]
         t = SeisTools.SAC.read(normpath(env["dataroot"], "sac", s["meta_file"]))
