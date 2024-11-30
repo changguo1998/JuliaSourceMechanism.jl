@@ -398,7 +398,7 @@ end
 """
 cglib_readhead(io::IO) ->
 (nx, ny, nz, x0, y0, z0, dx, dy, dz, nt, dt, stf,
-grid, 
+grid,
 bit_exp, expmask, expshift, bit_sig, sigmask, btype,
 nleaf, leafv, nnode, leftnodes, rightnodes)
 """
@@ -437,7 +437,7 @@ function cglib_readhead(io::IO)
     leftnodes = zeros(Int32, nnode); read!(io, leftnodes);
     rightnodes = zeros(Int32, nnode); read!(io, rightnodes);
 
-    return (nx, ny, nz, xs..., nt, dt, stf, grid, 
+    return (nx, ny, nz, xs..., nt, dt, stf, grid,
         bit_exp, expmask, expshift, bit_sig, sigmask, btype,
         nleaf, leafv, nnode, leftnodes, rightnodes)
 end
@@ -464,7 +464,7 @@ function cglib_readtrace(io::IO, ix::Integer, iy::Integer, iz::Integer,
     cbyte = read(io, Int32)
     cbits = read(io, Int8)
     encoded = zeros(UInt8, cbyte); read!(io, encoded);
-    
+
     decoded = zeros(Float32, nt, 6, 3);
     tracedatasize = [nt-nzero, 6, 3]
     idata = 1
@@ -509,7 +509,7 @@ cglib_readlocation(filename, x, y, z) -> (stf, dt, tp, ts, g)
 """
 function cglib_readlocation(filename::AbstractString, x::Real, y::Real, z::Real)
     io = open(filename);
-    (nx, ny, nz, x0, y0, z0, dx, dy, dz, nt, dt, stf, grid, 
+    (nx, ny, nz, x0, y0, z0, dx, dy, dz, nt, dt, stf, grid,
         bit_exp, expmask, expshift, bit_sig, sigmask, btype,
         nleaf, leafv, nnode, leftnodes, rightnodes) = cglib_readhead(io);
     if (x > (x0+(nx-1)*dx)) || (x < x0) ||
@@ -571,6 +571,7 @@ function cglib_readlocation(filename::AbstractString, x::Real, y::Real, z::Real)
     return (stf, dt, tp, ts, w);
 end
 
+
 function load3dcompressedgreenlib(s, depth::Real, event, targetdir::AbstractString)
     # (r, baz, _) = SeisTools.Geodesy.distance(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])
     r = SeisTools.Geodesy.distance(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])*0.001
@@ -593,7 +594,7 @@ function load3dcompressedgreenlib(s, depth::Real, event, targetdir::AbstractStri
                                 "distance"  => r,
                                 "bazimuth"  => baz,
                                 "dt"        => dt,
-                                "risetime"  => s["green_tsource"],
+                                "risetime"  => s["green_tsource"], # TODO bug here, this function should read risetime from glib
                                 "tp"        => tp + 2.5 * s["green_tsource"],
                                 "ts"        => ts + 2.5 * s["green_tsource"],
                                 "type"      => s["green_modeltype"])
@@ -833,18 +834,19 @@ function load!(station::Dict, env::Dict; showinfo::Bool=false)
         g = zeros(size(tg))
         SeisTools.DataProcess.conv_f!(g, tg, stf)
     elseif uppercase(station["green_modeltype"]) == "3D"
-        (s1, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], -2*station["green_tsource"], 1.0)
-        S1 = fft(s1)
-        s2 = gauss.((0.0:npts-1).*gmeta["dt"], gmeta["risetime"])
-        S2 = fft(s2)
-        F = S1 .* conj.(S2) ./ max.(1e-5, abs2.(S2))
-        SeisTools.DataProcess.taper!(tg)
-        G = fft(tg)
-        for c in eachcol(G)
-            c .*= F
-        end
-        ifft!(G)
-        g = real.(G)
+        # (s1, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], -2*station["green_tsource"], 1.0)
+        # S1 = fft(s1)
+        # s2 = gauss.((0.0:npts-1).*gmeta["dt"], gmeta["risetime"])
+        # S2 = fft(s2)
+        # F = S1 .* conj.(S2) ./ max.(1e-5, abs2.(S2))
+        # SeisTools.DataProcess.taper!(tg)
+        # G = fft(tg)
+        # for c in eachcol(G)
+        #     c .*= F
+        # end
+        # ifft!(G)
+        # g = real.(G)
+        g = tg
     elseif uppercase(station["green_modeltype"]) == "3D_COMPRESSED"
         (s1, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], -2*station["green_tsource"], 1.0)
         S1 = fft(s1)
