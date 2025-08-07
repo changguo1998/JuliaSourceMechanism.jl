@@ -679,6 +679,55 @@ function load2dgreenlib(s, depth::Real, event, targetdir::AbstractString)
 end
 
 # = =================
+# =   2D compressed
+# = =================
+
+function load2dcompressedgreenlib(s, depth::Real, event, targetdir::AbstractString)
+    # (r, baz, _) = SeisTools.Geodesy.distance(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])
+    r = SeisTools.Geodesy.distance(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])*0.001
+    baz = SeisTools.Geodesy.azimuth(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])
+    raz = mod(baz+180.0, 360.0)
+    (stf, dt, tp, ts, w) = cglib_readlocation(abspath(s["green_modelpath"]), -r, 0.0, depth)
+    mkpath(targetdir)
+    rrmat=[1 4 5; 4 2 6; 5 6 3]
+    T = [cosd(raz) sind(raz) 0.0;
+        -sind(raz) cosd(raz) 0.0;
+        0.0 0.0 1.0]
+    Tt = zeros(18, 18)
+    for i = 1:3, j = 1:3, n = 1:3, p = 1:3, q = 1:3, m = 1:3
+        r = rrmat[i, j] + (n-1)*6
+        c = rrmat[p, q] + (m-1)*6
+        f = rrmat[p, q] > 3 ? 0.5 : 1.0
+        Tt[c, r] += T[m, n]*T[p, i]*T[q, j]*f
+    end
+    wr = w[:, :, 1]
+    wt = w[:, :, 2]
+    wd = w[:, :, 3]
+    gt = [wr wt wd] * Tt
+    we = gt[:, 7:12]
+    wn = gt[:, 1:6]
+    wz = -gt[:, 13:18]
+    cmps = ["E", "N", "Z"]
+    green = [we wn wz]
+    for c = 1:3
+        targetpath = joinpath(targetdir, @sprintf("%s.%s.%s.gf", s["network"], s["station"], cmps[c]))
+        meta = Dict{String,Any}("modelname" => s["green_model"],
+                                "network"   => s["network"],
+                                "station"   => s["station"],
+                                "component" => s["component"],
+                                "depth"     => depth,
+                                "distance"  => r,
+                                "bazimuth"  => baz,
+                                "dt"        => dt,
+                                "risetime"  => rt,
+                                "tp"        => tp + 0.5 * rt,
+                                "ts"        => ts + 0.5 * rt,
+                                "type"      => s["green_modeltype"])
+        printgreenfile(targetpath, meta, green[:, 6*(c-1).+(1:6)])
+    end
+end
+
+# = =================
 # =        IO
 # = =================
 function mat2line(x::AbstractMatrix, intp::AbstractString)
@@ -803,6 +852,8 @@ function calculategreenfun(station::Dict, env::Dict)
         load3dcompressedgreenlib(station, env["algorithm"]["searchdepth"], env["event"], gfpath)
     elseif uppercase(station["green_modeltype"]) == "2D"
         load2dgreenlib(station, env["algorithm"]["searchdepth"], env["event"], gfpath)
+    elseif uppercase(station["green_modeltype"]) == "2D_COMPRESSED"
+        load2dcompressedgreenlib(station, env["algorithm"]["searchdepth"], env["event"], gfpath)
     else
         error("Unknown Green lib type, station: ", station["network"] * "." * station["station"])
     end
@@ -861,6 +912,19 @@ function load!(station::Dict, env::Dict; showinfo::Bool=false)
         ifft!(G)
         g = real.(G)
     elseif uppercase(station["green_modeltype"]) == "2D"
+        (s1, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], -2*station["green_tsource"], 1.0)
+        S1 = fft(s1)
+        s2 = gauss.((0.0:npts-1).*gmeta["dt"], gmeta["risetime"])
+        S2 = fft(s2)
+        F = S1 .* conj.(S2) ./ max.(1e-5, abs2.(S2))
+        SeisTools.DataProcess.taper!(tg)
+        G = fft(tg)
+        for c in eachcol(G)
+            c .*= F
+        end
+        ifft!(G)
+        g = real.(G)
+    elseif uppercase(station["green_modeltype"]) == "2D_COMPRESSED"
         (s1, _) = sourcetimefunction_v(npts, nfreq, gmeta["dt"]*npts, station["green_tsource"], -2*station["green_tsource"], 1.0)
         S1 = fft(s1)
         s2 = gauss.((0.0:npts-1).*gmeta["dt"], gmeta["risetime"])
