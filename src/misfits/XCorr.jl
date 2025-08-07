@@ -53,8 +53,8 @@ function preprocess!(phase::Setting, station::Setting, env::Setting)
     phase: $(phase["type"])"
     w = deepcopy(station["base_record"])
     w_resample = DataProcess.resample(w, station["meta_dt"] / phase["xcorr_dt"])
-    fltr = digitalfilter(Bandpass(phase["xcorr_band"][1], phase["xcorr_band"][2]; fs = 1 / phase["xcorr_dt"]),
-                         Butterworth(phase["xcorr_order"]))
+    fltr = digitalfilter(Bandpass(phase["xcorr_band"][1], phase["xcorr_band"][2]),
+                         Butterworth(phase["xcorr_order"]); fs = 1 / phase["xcorr_dt"])
     w_filt = filtfilt(fltr, w_resample)
     (_, w_trim, _) = cut(w_filt, station["base_begintime"],
                          phase["at"] + _Second(phase["xcorr_trim"][1]),
