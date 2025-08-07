@@ -1,7 +1,7 @@
 """
 """
 module Green
-using Printf, Dates, DelimitedFiles, Statistics, LinearAlgebra, SeismicRayTrace, Mmap, FFTW, DWN, SeisTools
+using Printf, Dates, DelimitedFiles, Statistics, LinearAlgebra, SeismicRayTrace, Mmap, FFTW, DWN, SeisTools, TOML
 import JuliaSourceMechanism: @must, @hadbetter, VelocityModel
 
 properties = ["green_dt", "green_tsource", "green_model", "green_modeltype"]
@@ -687,7 +687,12 @@ function load2dcompressedgreenlib(s, depth::Real, event, targetdir::AbstractStri
     r = SeisTools.Geodesy.distance(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])*0.001
     baz = SeisTools.Geodesy.azimuth(s["meta_lat"], s["meta_lon"], event["latitude"], event["longitude"])
     raz = mod(baz+180.0, 360.0)
-    (stf, dt, tp, ts, w) = cglib_readlocation(abspath(s["green_modelpath"]), -r, 0.0, depth)
+    (_, dt, tp, ts, w) = cglib_readlocation(abspath(s["green_modelpath"]), -r, 0.0, depth)
+    setting = let
+        (gfdir, gfilename) = splitdir(abspath(s["green_modelpath"]))
+        TOML.parsefile(joinpath(gfdir, "setting.toml"))
+    end
+    rt = setting["risetime"]
     mkpath(targetdir)
     rrmat=[1 4 5; 4 2 6; 5 6 3]
     T = [cosd(raz) sind(raz) 0.0;
