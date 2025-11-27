@@ -460,12 +460,15 @@ function cglib_readtrace(io::IO, ix::Integer, iy::Integer, iz::Integer,
     tp = read(io, Float32)
     ts = read(io, Float32)
     nzero = read(io, Int32)
+    decoded = zeros(Float32, nt, 6, 3);
+    if nzero == nt
+        return (tp, ts, decoded)
+    end
     amp = read(io, Float32)
     cbyte = read(io, Int32)
     cbits = read(io, Int8)
     encoded = zeros(UInt8, cbyte); read!(io, encoded);
 
-    decoded = zeros(Float32, nt, 6, 3);
     tracedatasize = [nt-nzero, 6, 3]
     idata = 1
     ibyte = 0
